@@ -5,8 +5,6 @@ import os
 import re
 from dataclasses import dataclass
 
-from dotenv import load_dotenv
-
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
@@ -29,6 +27,8 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    from dotenv import load_dotenv   # lazy: the GitHub Actions sender doesn't install python-dotenv
+
     load_dotenv()
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:

@@ -1,0 +1,34 @@
+# OPTIONAL: deploy to Cloudflare from GitHub. You can also just run `npm run deploy` on your computer.
+# Manual only by default. To deploy on every push to main, add:   push: { branches: [main] }
+#
+# Needs repo secrets (Settings > Secrets and variables > Actions):
+#   CLOUDFLARE_API_TOKEN   (Cloudflare dashboard > My Profile > API Tokens > template "Edit Cloudflare Workers"
+#                           + add permission  Account > D1 > Edit)
+#   CLOUDFLARE_ACCOUNT_ID
+# The bot's own secrets (TELEGRAM_BOT_TOKEN, ...) live in Cloudflare, not here.
+name: Deploy to Cloudflare
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck && npm test
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          preCommands: npx wrangler d1 migrations apply skybrief --remote
+          command: deploy

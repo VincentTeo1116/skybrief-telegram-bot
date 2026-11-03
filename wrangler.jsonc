@@ -1,0 +1,33 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "skybrief",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-09-01",
+	// Runs every minute; the code sends each user's report when THEIR local time reaches their chosen time.
+	"triggers": {
+		"crons": [
+			"* * * * *"
+		]
+	},
+	"d1_databases": [
+		{
+			// The code reads env.DB, so this name must stay "DB".
+			"binding": "DB",
+			"database_name": "skybrief",
+			"database_id": "ca858539-c2d0-4fd0-8857-a0837361a3b3",
+			"migrations_dir": "migrations"
+		}
+	],
+	"vars": {
+		// approval = new users wait for an admin to approve them (default)
+		// open     = anyone can use the bot immediately
+		// closed   = only people an admin added with /allow
+		"ACCESS_MODE": "approval",
+		"DEFAULT_DAILY_TIME": "08:30"
+	},
+	"observability": {
+		"enabled": true
+	}
+	// Secrets (set with: npx wrangler secret bulk secrets.json): TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET,
+	// ADMIN_IDS (comma-separated Telegram IDs), WAQI_TOKEN (optional).
+}

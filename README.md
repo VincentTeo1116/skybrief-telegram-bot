@@ -1,66 +1,64 @@
 # ☀️ SkyBrief: Weather & Air-Quality Telegram Bot
 
-SkyBrief is a personal Telegram bot that sends a clean **weather and air-quality (AQI) report every morning at 08:30** and answers on demand, so you never have to open a website. Every user gets their own saved location, language and layout.
+SkyBrief is a multi-user Telegram bot that sends a clean **weather and air-quality (AQI) report every morning at 08:30** and answers on demand. It runs on **Cloudflare Workers** (TypeScript) with a **D1** database: always on, no server to maintain, instant replies, and a free tier that comfortably covers personal and small-team use.
+
+Every user has their own saved location, language, layout and daily time. An admin controls who may use the bot.
 
 ## Features
 
 | | |
 |---|---|
-| 🔔 **Daily report** | 08:30 by default, per user, in the **local time of the saved city**. Change with `/settime 07:45`, switch off with `/daily`. |
-| 🌦 **On demand** | Tap **Weather now** or send `/weather`. Tap **Hourly** for the next 12 hours. |
-| 📍 **Live location** | Tap **Share my location**: the bot detects your place by GPS, saves it and shows the weather. |
-| 🏙 **One-tap city change** | 10 city shortcuts, or just *type any city name* and pick a result. |
-| ⚙️ **Settings** | Show or hide sections (details, sun & UV, air quality, rain outlook, forecast, tips). |
-| 🌐 **Languages** | **English** (default), **Bahasa Melayu**, **中文**. Easy to add more in `bot/i18n.py`. |
-| 🧠 **Memory** | Location, language, hidden sections and daily time are stored in SQLite and survive restarts. |
-| 🔒 **Private** | Set `ALLOWED_USER_IDS` and only those Telegram accounts can use the bot. |
+| 🔔 **Daily report** | 08:30 by default, per user, in the **local time of that user's city** (a team spread over several timezones each gets their own morning). `/settime 07:45` to change, `/daily` to switch off. |
+| 🌦 **On demand** | Tap **Weather now** or send `/weather`. **Hourly** shows the next 12 hours. |
+| 📍 **Live location** | Tap **Share my location**: the bot detects where you are by GPS, saves it and shows the weather. |
+| 🏙 **One-tap city change** | 10 shortcuts, or *type any city name* and pick a result. |
+| ⚙️ **Settings** | Show or hide sections (details, sun & UV, air quality, rain outlook, forecast, tips) and choose the language: **English** (default), **Bahasa Melayu**, **中文**. |
+| 👥 **Multi-user** | Each person's settings are stored separately. Access modes: `approval` (admin taps Approve/Deny), `open`, or `closed`. Admin commands `/users`, `/allow`, `/block`. |
+| 🧠 **Memory** | Everything is stored in Cloudflare D1 and survives redeploys. |
 
-**Each report includes:** temperature, feels-like, high/low, humidity, wind, cloud, pressure, sunrise/sunset, UV index, **AQI with PM2.5/PM10**, a rain outlook for the next 6 hours, a 3-day forecast and practical tips (umbrella, sunscreen, mask…).
+**Each report includes:** temperature, feels-like, high/low, humidity, wind, cloud, pressure, sunrise/sunset, UV, **AQI with PM2.5/PM10**, a 6-hour rain outlook, a 3-day forecast and practical tips (umbrella, sunscreen, mask…).
 
 ## Data sources and accuracy
 
-* **Weather:** [Open-Meteo](https://open-meteo.com): model-based, "current" values refresh about every 15 minutes. The report shows the observation time.
-* **Air quality:** with a free [WAQI token](https://aqicn.org/data-platform/token/) the bot uses **real measured AQI from the nearest monitoring station** (within 40 km and under 3 hours old) and names the station. Otherwise it falls back to Open-Meteo's modelled estimate and says so.
+* **Weather:** [Open-Meteo](https://open-meteo.com): model-based; "current" values refresh about every 15 minutes. The report shows the observation time.
+* **Air quality:** with a free [WAQI token](https://aqicn.org/data-platform/token/) the bot uses **real measured AQI from the nearest monitoring station** (within 40 km, under 3 hours old) and names the station. Otherwise it falls back to Open-Meteo's modelled estimate and says so.
 * AQI uses the **US EPA scale**, which can differ from Malaysia's official IPU readings.
-* Place search uses Open-Meteo geocoding; GPS names come from OpenStreetMap Nominatim.
+* Place search: Open-Meteo geocoding. GPS names: OpenStreetMap Nominatim (falls back to the nearest preset city, then raw coordinates).
 * SkyBrief does **not** replace official severe-weather warnings (MetMalaysia, NEA, etc.).
 
-## Quick start (run on your computer)
+## How it works
 
-**1. Create the bot.** In Telegram open [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token.
-
-**2. Find your Telegram ID.** Message [@userinfobot](https://t.me/userinfobot) and copy the number.
-
-**3. Install and configure** (Windows PowerShell shown; use `python3` / `source .venv/bin/activate` on macOS/Linux):
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-copy .env.example .env        # then open .env and fill in the values
+```
+Telegram ──webhook──▶ Cloudflare Worker ──▶ D1 (users, settings)
+                         │   ▲                 
+   Cron trigger (every   │   └── Open-Meteo / WAQI / Nominatim
+   minute) ──────────────┘
 ```
 
-**4. Run.**
+* Telegram calls `POST /webhook` (protected by a secret header). The Worker acknowledges instantly and processes in the background.
+* A **cron trigger runs every minute**; each user is served when their own local time reaches their chosen time. A claim in the database prevents duplicates, and a 2-hour catch-up window covers any outage.
 
-```powershell
-.\.venv\Scripts\python.exe -m bot
-```
+## Access control (multi-user)
 
-Open your bot in Telegram and send `/start`.
+Set with the `ACCESS_MODE` variable in `wrangler.jsonc`:
 
-## Configuration
+| Mode | Behaviour |
+|---|---|
+| `approval` (default) | A new user's first message creates a *pending* request. Every admin gets a message with **✅ Approve / ⛔ Deny** buttons. |
+| `open` | Anyone who finds the bot can use it. |
+| `closed` | Only people an admin adds with `/allow <id>`. Everyone else sees "private bot". |
 
-Set these in `.env` locally, or as environment variables on your host.
+Admins are the Telegram IDs in `ADMIN_IDS` (comma-separated). They are always active and see extra commands:
 
-| Variable | Required | Description |
-|---|---|---|
-| `TELEGRAM_BOT_TOKEN` | ✅ | Token from @BotFather. |
-| `ALLOWED_USER_IDS` | Strongly recommended | Comma-separated Telegram user IDs. Empty means **anyone** can use your bot. |
-| `WAQI_TOKEN` | Optional | Enables measured AQI from the nearest station. |
-| `DB_PATH` | Optional | SQLite file path. Default `data/bot.db` (the Docker image uses `/data/bot.db`). |
-| `DEFAULT_DAILY_TIME` | Optional | Default daily time for new users, 24h. Default `08:30`. |
-| `LOG_LEVEL` | Optional | `INFO` (default), `DEBUG`, … |
+| Command | What it does |
+|---|---|
+| `/users` | List users with status, city, language and daily time |
+| `/allow 123456789` | Approve a user by Telegram ID (they are notified) |
+| `/block 123456789` | Block a user. They get no replies |
 
-## Using the bot
+Users can find their ID by messaging [@userinfobot](https://t.me/userinfobot).
+
+## User commands
 
 | Command | What it does |
 |---|---|
@@ -70,100 +68,119 @@ Set these in `.env` locally, or as environment variables on your host.
 | `/city` | Change location (or just type a city name) |
 | `/settings` | Choose sections to show and the language |
 | `/daily` | Turn the daily report on or off |
-| `/settime 07:45` | Change the daily report time (24h) |
+| `/settime 07:45` | Change the daily report time (24h, in your city's timezone) |
 | `/help` | Show help |
 
-## Deployment
+## Configuration
 
-The bot must be **running at 08:30**, so it needs an always-on host. GitHub stores the code; it can't run a bot continuously.
+| Name | Type | Description |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | secret, required | Token from [@BotFather](https://t.me/BotFather) |
+| `WEBHOOK_SECRET` | secret, required | Random string (letters, digits, `_`, `-`). Telegram sends it with every update; it also protects `/setup` |
+| `ADMIN_IDS` | secret, required | Comma-separated admin Telegram IDs |
+| `WAQI_TOKEN` | secret, optional | Enables measured AQI from the nearest station |
+| `ACCESS_MODE` | var in `wrangler.jsonc` | `approval` (default), `open` or `closed` |
+| `DEFAULT_DAILY_TIME` | var in `wrangler.jsonc` | Default for new users, 24h. Default `08:30` |
 
-> The bot uses long polling: it only makes outgoing connections, so no domain, SSL or open ports are needed.
+## Deploy to Cloudflare (step by step)
 
-### Option A: Any Linux VPS or Oracle Cloud Always Free (recommended)
+You need a free [Cloudflare account](https://dash.cloudflare.com/sign-up) and Node.js 20+.
 
 ```bash
-# 1. Install Docker (Ubuntu/Debian)
-curl -fsSL https://get.docker.com | sh
+npm install
 
-# 2. Get the code (a private repo needs a deploy key or a personal access token)
-git clone https://github.com/<you>/skybrief-telegram-bot.git
-cd skybrief-telegram-bot
+# 1. Log in (opens the browser)
+npx wrangler login
 
-# 3. Configure and start
-cp .env.example .env && nano .env
-docker compose up -d --build
+# 2. Create the database, then paste the printed database_id into wrangler.jsonc
+npx wrangler d1 create skybrief
 
-# 4. Check it
-docker compose logs -f          # look for "Application started"
+# 3. Create the tables
+npm run db:migrate:remote
+
+# 4. Deploy: prints your URL, e.g. https://skybrief.<you>.workers.dev
+npm run deploy
+
+# 5. Store the secrets (create secrets.json from the template below first)
+npx wrangler secret bulk secrets.json
 ```
 
-Docker restarts the bot automatically after crashes and server reboots (`restart: unless-stopped`). Saved data lives in the `bot-data` Docker volume.
-**Update later:** `git pull && docker compose up -d --build`.
+`secrets.json` (git-ignored; delete it after step 5):
 
-### Option B: Any container host (Railway, Fly.io, …)
+```json
+{
+  "TELEGRAM_BOT_TOKEN": "123456:ABC...",
+  "WEBHOOK_SECRET": "a-long-random-string",
+  "ADMIN_IDS": "123456789",
+  "WAQI_TOKEN": "optional"
+}
+```
 
-Deploy from the `Dockerfile`, set the environment variables above, and **mount a persistent volume at `/data`**: without it, saved locations reset on every redeploy. Check each provider's current pricing and free-tier terms.
+**6. Connect Telegram.** Open this URL once in a browser (use your own URL and your `WEBHOOK_SECRET`):
 
-### Option C: GitHub Actions only (free, daily report only)
+```
+https://skybrief.<you>.workers.dev/setup?key=<WEBHOOK_SECRET>
+```
 
-`.github/workflows/daily-push.yml` sends **one report a day with no server**. It is scheduled for 08:15 Malaysia time and then **waits until exactly 08:30** before sending, which absorbs GitHub's usual 5-20 minute scheduling delay. If GitHub runs later than 08:30 it sends immediately.
+You should see `{"ok": true, ...}`. This registers the webhook and the command menus (English, Malay, Chinese).
 
-Limits: no on-demand replies, no Settings screen (use repo Variables instead), and GitHub may disable scheduled workflows on **public** repos after 60 days without activity.
+**7. Try it.** Open your bot in Telegram and send `/start`.
 
-1. **Settings > Secrets and variables > Actions > Secrets:** add `TELEGRAM_BOT_TOKEN`, `TG_CHAT_ID` (your Telegram ID) and optionally `WAQI_TOKEN`.
-2. **Same page > Variables** (all optional): `CITY_NAME`, `CITY_LAT`, `CITY_LON`, `CITY_COUNTRY`, `CITY_TZ` (default Kuala Lumpur), `LANGUAGE` (`en`/`ms`/`zh`), `HIDDEN_SECTIONS` (e.g. `forecast,tips`).
-3. **Actions tab > Daily weather push > Run workflow** to test. It sends immediately.
-4. The `schedule:` is already enabled. **Don't run it together with Option A/B** (duplicate messages).
+**Updating later:** `git pull && npm run deploy`. Database migrations: add a new file in `migrations/` and run `npm run db:migrate:remote`.
 
-### Verify the daily push
+**Deploying from GitHub (optional):** `.github/workflows/deploy.yml` can deploy for you. Add repo secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and run the workflow manually.
 
-Send `/settime` with a time 2–3 minutes from now (in the city's local time), wait for the report, then set it back with `/settime 08:30`.
+## Run and test locally
 
-### Only one copy at a time
+```bash
+npm test                  # unit tests (formatting, translations, schedule logic, keyboards…)
+npm run typecheck
+npm run test:integration  # end-to-end: real Workers runtime + local D1 + mock Telegram (needs internet)
+```
 
-Never run two instances with the same token (for example your laptop plus a server). Telegram will report `Conflict: terminated by other getUpdates request`.
+`test:integration` plays a full multi-user scenario: approval flow, settings, language switching, GPS, blocking, and the cron sending to several users in different languages.
+
+To chat with the bot from your computer: copy `.dev.vars.example` to `.dev.vars`, fill it in, run `npm run db:migrate:local` and `npm run dev`, then expose the local port with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8787`) and call `/setup` against the tunnel URL. For normal use, deploying is simpler.
+
+## Limits and notes
+
+* **Free plan:** I have not verified Cloudflare's current free-tier numbers; check the Workers and D1 pricing pages. The code is built to stay small: the cron handles at most 8 users per minute (the rest are served on the following minutes) to respect the per-invocation request cap. For larger groups, the paid Workers plan lifts these limits.
+* **Cron every minute** uses about 1,440 invocations a day, well inside typical free limits.
+* One Worker serves one Telegram bot. Rotating the bot token means updating the `TELEGRAM_BOT_TOKEN` secret and opening `/setup` again.
+* The previous Python implementation is preserved in git history (tag `python-final`).
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
+| Symptom | Check |
 |---|---|
-| `Conflict: terminated by other getUpdates` | Another instance is running. Stop it. |
-| `Unauthorized` at startup | Wrong or revoked token. |
-| Bot replies "This is a private bot" | Your ID isn't in `ALLOWED_USER_IDS`. |
-| Settings reset after redeploy | No persistent volume mounted at `/data`. |
-| AQI footer says "modelled estimate" | No `WAQI_TOKEN`, or no fresh station within 40 km. |
+| `/setup` says `forbidden` | The `key` in the URL must equal the `WEBHOOK_SECRET` secret exactly |
+| Bot doesn't answer | `npx wrangler tail` shows live logs. Re-open `/setup` to re-register the webhook |
+| New users never get approved | Is your Telegram ID in `ADMIN_IDS`? Admins receive the Approve/Deny message |
+| Daily report missing | Check `/settings`/`/daily` shows 🔔 ON, and the user's city timezone. `npx wrangler tail` shows `daily_done` lines each run |
+| AQI says "modelled estimate" | No `WAQI_TOKEN`, or no fresh station within 40 km |
 
 ## Project structure
 
 ```
-bot/
-  app.py          wiring + startup (schedules every saved user's daily job)
-  handlers.py     commands, buttons, settings, GPS, city search, daily job
-  weather.py      Open-Meteo / WAQI / geocoding clients, caching, retries
-  formatting.py   the report layouts (language + section aware)
-  i18n.py         ALL translations (en / ms / zh): add a language here
-  keyboards.py    bottom bar + inline buttons
-  presets.py      one-tap city list (edit me)
-  db.py           SQLite storage + automatic migrations
-  config.py       environment settings
-  cron_push.py    one-shot sender for GitHub Actions (Option C)
-tests/            offline unit tests
-Dockerfile, docker-compose.yml, .github/workflows/
+src/
+  index.ts       Worker entry: /webhook, /setup, cron
+  handlers.ts    commands, buttons, settings, GPS, city search, access control, admin
+  daily.ts       per-user, per-timezone daily delivery
+  weather.ts     Open-Meteo / WAQI / geocoding clients
+  format.ts      the report layouts (language + section aware)
+  i18n.ts        ALL translations (en / ms / zh): add a language here
+  keyboards.ts   bottom bar + inline buttons
+  presets.ts     one-tap city list (edit me)
+  db.ts          D1 access
+  telegram.ts    Bot API client
+migrations/      D1 schema
+test/            unit tests
+scripts/         end-to-end test
+wrangler.jsonc   Worker configuration
 ```
-
-## Development
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-* **Add or edit city shortcuts:** `bot/presets.py`
-* **Change wording or add a language:** `bot/i18n.py`
-* **Change the report layout:** `bot/formatting.py`
 
 ## Security notes
 
-* Never commit `.env`; it is git-ignored. Keep the repository **private** if it contains anything specific to you.
-* If a token is exposed, revoke it: `/revoke` in @BotFather (bot token) or regenerate it on the WAQI site.
-* Set `ALLOWED_USER_IDS` so strangers can't use (or run up requests on) your bot.
+* Never commit `secrets.json`, `.dev.vars` or `.env` (all git-ignored). Keep real tokens only in Cloudflare secrets.
+* If a token is exposed, revoke it: `/revoke` in @BotFather, then update the secret.
+* The webhook only accepts requests carrying `WEBHOOK_SECRET`. Keep `ACCESS_MODE` on `approval` or `closed` unless you want a public bot.

@@ -1,0 +1,8 @@
+# Copy to ".dev.vars" for `npm run dev` (local only; the file is git-ignored).
+# In production these are Cloudflare secrets: see README "Deploy".
+
+TELEGRAM_BOT_TOKEN=123456:replace-me
+WEBHOOK_SECRET=any-long-random-string-using-letters-numbers-underscore-dash
+ADMIN_IDS=123456789
+WAQI_TOKEN=
+ACCESS_MODE=approval

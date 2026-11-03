@@ -104,9 +104,16 @@ Docker restarts the bot automatically after crashes and server reboots (`restart
 
 Deploy from the `Dockerfile`, set the environment variables above, and **mount a persistent volume at `/data`**: without it, saved locations reset on every redeploy. Check each provider's current pricing and free-tier terms.
 
-### Option C: GitHub Actions only (free, limited)
+### Option C: GitHub Actions only (free, daily report only)
 
-`.github/workflows/daily-push.yml` sends **one report a day with no server**, but there are no on-demand replies and no per-user settings, and GitHub's cron can run 5–20 minutes late. Add repo secrets `TELEGRAM_BOT_TOKEN` and `TG_CHAT_ID`, then uncomment the `schedule:` lines. **Don't run it together with Option A/B** or you'll get duplicate messages.
+`.github/workflows/daily-push.yml` sends **one report a day with no server**. It is scheduled for 08:15 Malaysia time and then **waits until exactly 08:30** before sending, which absorbs GitHub's usual 5-20 minute scheduling delay. If GitHub runs later than 08:30 it sends immediately.
+
+Limits: no on-demand replies, no Settings screen (use repo Variables instead), and GitHub may disable scheduled workflows on **public** repos after 60 days without activity.
+
+1. **Settings > Secrets and variables > Actions > Secrets:** add `TELEGRAM_BOT_TOKEN`, `TG_CHAT_ID` (your Telegram ID) and optionally `WAQI_TOKEN`.
+2. **Same page > Variables** (all optional): `CITY_NAME`, `CITY_LAT`, `CITY_LON`, `CITY_COUNTRY`, `CITY_TZ` (default Kuala Lumpur), `LANGUAGE` (`en`/`ms`/`zh`), `HIDDEN_SECTIONS` (e.g. `forecast,tips`).
+3. **Actions tab > Daily weather push > Run workflow** to test. It sends immediately.
+4. The `schedule:` is already enabled. **Don't run it together with Option A/B** (duplicate messages).
 
 ### Verify the daily push
 

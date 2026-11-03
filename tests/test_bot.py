@@ -197,3 +197,17 @@ def test_db_language_sections_and_migration(tmp_path):
     db2 = Database(path)
     assert db2.get_user(7).lang == "zh" and db2.get_user(7).hidden == frozenset({"tips"})
     db2.close()
+
+
+# ------------------------------------------------------------- GitHub Actions sender
+def test_seconds_until_send_time():
+    from datetime import timezone
+    from bot.cron_push import seconds_until
+    kl = "Asia/Kuala_Lumpur"
+    at = lambda h, m, s=0: datetime(2026, 11, 3, h, m, s, tzinfo=timezone.utc)   # UTC clock
+    assert seconds_until("08:30", kl, now=at(0, 15)) == 900          # 08:15 local -> wait 15 min
+    assert seconds_until("08:30", kl, now=at(0, 30)) == 0            # exactly on time
+    assert seconds_until("08:30", kl, now=at(0, 41)) == 0            # GitHub was late -> send now
+    assert seconds_until("08:30", kl, now=at(23, 0)) == 0            # far from target: never idle for hours
+    assert seconds_until("08:30", kl, now=at(0, 0)) == 0            # 08:00 local is >25 min away: don't wait
+    assert seconds_until("garbage", kl, now=at(0, 15)) == 0

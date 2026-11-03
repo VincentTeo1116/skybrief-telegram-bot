@@ -1,0 +1,13 @@
+# For any Linux VPS:  docker compose up -d --build
+services:
+  skybrief:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/bot.db
+    volumes:
+      - bot-data:/data
+
+volumes:
+  bot-data:

@@ -1,0 +1,27 @@
+# OPTIONAL zero-cost fallback: sends ONE report a day from GitHub's servers (no live commands).
+# Do NOT enable the schedule if you also run the always-on bot, or you'll get duplicates.
+# Needs repo secrets: TELEGRAM_BOT_TOKEN, TG_CHAT_ID  (optional: WAQI_TOKEN)
+# GitHub cron is UTC and can run 5-20 minutes late. 00:30 UTC = 08:30 Malaysia/Singapore.
+name: Daily weather push (fallback)
+
+on:
+  workflow_dispatch:        # manual "Run workflow" button for testing
+  # schedule:
+  #   - cron: "30 0 * * *"  # <- uncomment to enable
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m bot.cron_push
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          WAQI_TOKEN: ${{ secrets.WAQI_TOKEN }}
+          # Optional: CITY_NAME / CITY_LAT / CITY_LON (defaults to Kuala Lumpur)

@@ -1,23 +1,32 @@
-# OPTIONAL: deploy to Cloudflare from GitHub. You can also just run `npm run deploy` on your computer.
-# Manual only by default. To deploy on every push to main, add:   push: { branches: [main] }
+# Deploys SkyBrief to Cloudflare automatically whenever you push to the `main` branch
+# (and on demand from the Actions tab: "Run workflow").
 #
-# Needs repo secrets (Settings > Secrets and variables > Actions):
-#   CLOUDFLARE_API_TOKEN   (Cloudflare dashboard > My Profile > API Tokens > template "Edit Cloudflare Workers"
-#                           + add permission  Account > D1 > Edit)
+# Order: install -> type-check -> unit tests -> apply database migrations -> deploy.
+# If any step fails, nothing is deployed and the live bot keeps running the previous version.
+#
+# Needs these repository secrets (Settings > Secrets and variables > Actions):
+#   CLOUDFLARE_API_TOKEN    token with: Account > Workers Scripts > Edit, Account > D1 > Edit
 #   CLOUDFLARE_ACCOUNT_ID
-# The bot's own secrets (TELEGRAM_BOT_TOKEN, ...) live in Cloudflare, not here.
+# The bot's own secrets (TELEGRAM_BOT_TOKEN, WEBHOOK_SECRET, ADMIN_IDS, WAQI_TOKEN) stay in Cloudflare;
+# deploying never touches them.
 name: Deploy to Cloudflare
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:        # documentation-only changes don't need a redeploy
+      - "**.md"
+      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 concurrency:
   group: deploy
-  cancel-in-progress: false
+  cancel-in-progress: false   # never interrupt a deploy that is already running
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -25,7 +34,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run typecheck && npm test
+      - run: npm run typecheck
+      - run: npm test
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

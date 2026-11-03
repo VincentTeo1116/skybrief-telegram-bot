@@ -126,9 +126,11 @@ You should see `{"ok": true, ...}`. This registers the webhook and the command m
 
 **7. Try it.** Open your bot in Telegram and send `/start`.
 
-**Updating later:** `git pull && npm run deploy`. Database migrations: add a new file in `migrations/` and run `npm run db:migrate:remote`.
+**Updating later (automatic):** every push to the `main` branch is deployed by `.github/workflows/deploy.yml` (type-check, tests, database migrations, then deploy; a failing step means nothing is deployed). Set it up once by adding two repo secrets, `CLOUDFLARE_API_TOKEN` (permissions: Account > Workers Scripts > Edit and Account > D1 > Edit) and `CLOUDFLARE_ACCOUNT_ID`. Your bot's own secrets stay in Cloudflare and are never touched by a deploy. You can still deploy by hand with `npm run deploy`.
 
-**Deploying from GitHub (optional):** `.github/workflows/deploy.yml` can deploy for you. Add repo secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and run the workflow manually.
+**Database changes:** add a new numbered file in `migrations/` (never edit an applied one). The deploy workflow applies it automatically; by hand: `npm run db:migrate:remote`.
+
+**Configuration lives in `wrangler.jsonc`.** Changes made by hand in the Cloudflare dashboard are overwritten by the next deploy.
 
 ## Run and test locally
 

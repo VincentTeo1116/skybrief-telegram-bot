@@ -6,3 +6,5 @@ WEBHOOK_SECRET=any-long-random-string-using-letters-numbers-underscore-dash
 ADMIN_IDS=123456789
 WAQI_TOKEN=
 ACCESS_MODE=approval
+# Alerts are paused between these local hours (or: off)
+QUIET_HOURS=22:00-06:30

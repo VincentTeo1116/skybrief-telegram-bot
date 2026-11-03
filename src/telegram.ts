@@ -81,11 +81,26 @@ export class Telegram {
     });
   }
 
+  /** Reply to an inline query (`@bot something` typed in any chat). */
+  answerInlineQuery(
+    id: string,
+    results: Record<string, unknown>[],
+    opts: { cacheTime?: number; isPersonal?: boolean; button?: { text: string; start_parameter: string } } = {},
+  ) {
+    return this.call("answerInlineQuery", {
+      inline_query_id: id,
+      results,
+      cache_time: opts.cacheTime ?? 60,
+      is_personal: opts.isPersonal ?? true,
+      ...(opts.button ? { button: opts.button } : {}),
+    });
+  }
+
   setWebhook(url: string, secretToken: string) {
     return this.call("setWebhook", {
       url,
       secret_token: secretToken,
-      allowed_updates: ["message", "callback_query"],
+      allowed_updates: ["message", "callback_query", "inline_query"],
       max_connections: 20,
     });
   }

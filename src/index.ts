@@ -1,3 +1,4 @@
+import { runAlerts } from "./alerts";
 import { runDaily } from "./daily";
 import { botCommands, handleUpdate } from "./handlers";
 import { Telegram } from "./telegram";
@@ -48,6 +49,20 @@ export default {
   },
 
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runDaily(env, new Date(event.scheduledTime)));
+    const now = new Date(event.scheduledTime);
+    ctx.waitUntil(
+      (async () => {
+        // Every minute: morning/evening reports that have just become due.
+        const daily = await runDaily(env, now).catch((e) => {
+          console.log(JSON.stringify({ event: "daily_crashed", error: String(e) }));
+          return { due: 0, sent: 0, failed: 0 };
+        });
+        // Every 15 minutes (:05, :20, :35, :50): rain and air-quality alerts. Offset from :00/:30 where most reports are due.
+        // (skipped when reports were due this minute: both together could exceed the per-invocation request cap)
+        if (daily.due === 0 && (env.ALERTS_EVERY_MINUTE === "1" || now.getUTCMinutes() % 15 === 5)) {
+          await runAlerts(env, now).catch((e) => console.log(JSON.stringify({ event: "alerts_crashed", error: String(e) })));
+        }
+      })(),
+    );
   },
 } satisfies ExportedHandler<Env>;

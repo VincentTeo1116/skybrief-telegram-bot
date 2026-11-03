@@ -28,17 +28,29 @@ export function minutesOf(hhmm: string): number {
   return h * 60 + m;
 }
 
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/** One formatter per timezone: constructing Intl.DateTimeFormat is slow (~0.2 ms), and CPU time is capped on the free plan. */
+function formatterFor(tz: string): Intl.DateTimeFormat {
+  let f = formatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }); // throws RangeError for an unknown timezone, and nothing is cached in that case
+    formatters.set(tz, f);
+  }
+  return f;
+}
+
 /** Current local date (YYYY-MM-DD) and time (HH:MM) in an IANA timezone. Throws on an unknown timezone. */
 export function localParts(tz: string, now: Date): { date: string; time: string } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
+  const parts = formatterFor(tz).formatToParts(now);
   const get = (type: string) => parts.find((p) => p.type === type)!.value;
   return { date: `${get("year")}-${get("month")}-${get("day")}`, time: `${get("hour")}:${get("minute")}` };
 }

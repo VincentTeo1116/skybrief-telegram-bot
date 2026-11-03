@@ -1,8 +1,10 @@
 /** D1 (SQLite) access: one row per Telegram user. */
 import { normLang } from "./i18n";
-import type { Place, Status, User } from "./types";
+import type { ClockMode, Place, Status, TempUnit, User, WindUnit } from "./types";
 
 type Row = Record<string, unknown>;
+
+const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
 
 function toUser(r: Row): User {
   return {
@@ -22,6 +24,19 @@ function toUser(r: Row): User {
     lastSent: String(r.last_sent ?? ""),
     searchJson: String(r.search_json ?? ""),
     createdAt: String(r.created_at ?? ""),
+    tempUnit: oneOf<TempUnit>(r.temp_unit, ["c", "f"], "c"),
+    windUnit: oneOf<WindUnit>(r.wind_unit, ["kmh", "ms", "mph"], "kmh"),
+    clock: oneOf<ClockMode>(r.clock, ["auto", "12", "24"], "auto"),
+    compact: Number(r.compact) === 1,
+    rainAlerts: Number(r.rain_alerts) === 1,
+    aqiAlert: Number(r.aqi_alert) || 0,
+    aqiAlertActive: Number(r.aqi_alert_active) === 1,
+    lastRainAlert: Number(r.last_rain_alert) || 0,
+    lastAqiAlert: Number(r.last_aqi_alert) || 0,
+    lastAlertCheck: Number(r.last_alert_check) || 0,
+    eveningOn: Number(r.evening_on) === 1,
+    eveningTime: String(r.evening_time ?? "18:00"),
+    lastEvening: String(r.last_evening ?? ""),
   };
 }
 
@@ -69,6 +84,19 @@ export interface UserPatch {
   dailyTime?: string;
   lastSent?: string;
   searchJson?: string;
+  tempUnit?: TempUnit;
+  windUnit?: WindUnit;
+  clock?: ClockMode;
+  compact?: boolean;
+  rainAlerts?: boolean;
+  aqiAlert?: number;
+  aqiAlertActive?: boolean;
+  lastRainAlert?: number;
+  lastAqiAlert?: number;
+  lastAlertCheck?: number;
+  eveningOn?: boolean;
+  eveningTime?: string;
+  lastEvening?: string;
 }
 
 // Whitelist of patchable fields -> column names (never interpolate caller-provided keys into SQL).
@@ -87,6 +115,19 @@ const COLUMNS: Record<keyof UserPatch, string> = {
   dailyTime: "daily_time",
   lastSent: "last_sent",
   searchJson: "search_json",
+  tempUnit: "temp_unit",
+  windUnit: "wind_unit",
+  clock: "clock",
+  compact: "compact",
+  rainAlerts: "rain_alerts",
+  aqiAlert: "aqi_alert",
+  aqiAlertActive: "aqi_alert_active",
+  lastRainAlert: "last_rain_alert",
+  lastAqiAlert: "last_aqi_alert",
+  lastAlertCheck: "last_alert_check",
+  eveningOn: "evening_on",
+  eveningTime: "evening_time",
+  lastEvening: "last_evening",
 };
 
 export async function patchUser(db: D1Database, chatId: number, patch: UserPatch): Promise<User> {
@@ -118,8 +159,15 @@ export async function toggleSection(db: D1Database, chatId: number, section: str
   return patchUser(db, chatId, { hidden });
 }
 
+/** Users who may receive the morning and/or evening report. */
 export async function dailyCandidates(db: D1Database): Promise<User[]> {
-  const { results } = await db.prepare("SELECT * FROM users WHERE status = 'active' AND daily_on = 1").all<Row>();
+  const { results } = await db.prepare("SELECT * FROM users WHERE status = 'active' AND (daily_on = 1 OR evening_on = 1)").all<Row>();
+  return results.map(toUser);
+}
+
+/** Users with at least one alert switched on. */
+export async function alertCandidates(db: D1Database): Promise<User[]> {
+  const { results } = await db.prepare("SELECT * FROM users WHERE status = 'active' AND (rain_alerts = 1 OR aqi_alert > 0)").all<Row>();
   return results.map(toUser);
 }
 
@@ -128,8 +176,12 @@ export async function listUsers(db: D1Database, limit = 50): Promise<User[]> {
   return results.map(toUser);
 }
 
-/** Atomically claim today's daily report. Returns false if it was already claimed (prevents duplicates). */
-export async function claimDaily(db: D1Database, chatId: number, localDate: string): Promise<boolean> {
-  const r = await db.prepare("UPDATE users SET last_sent = ? WHERE chat_id = ? AND last_sent <> ?").bind(localDate, chatId, localDate).run();
+export type Slot = "morning" | "evening";
+const SLOT_COLUMN: Record<Slot, string> = { morning: "last_sent", evening: "last_evening" };
+
+/** Atomically claim today's report for a slot. Returns false if it was already claimed (prevents duplicates). */
+export async function claimDaily(db: D1Database, chatId: number, localDate: string, slot: Slot = "morning"): Promise<boolean> {
+  const col = SLOT_COLUMN[slot]; // from a fixed map, never from user input
+  const r = await db.prepare(`UPDATE users SET ${col} = ? WHERE chat_id = ? AND ${col} <> ?`).bind(localDate, chatId, localDate).run();
   return (r.meta.changes ?? 0) > 0;
 }

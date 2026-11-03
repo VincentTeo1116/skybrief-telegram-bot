@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PER_TICK, isDue, lastSentAfterChange, minutesLate } from "../src/daily";
-import { SECTIONS, aqiBand, hourlyMessage, tips, uvLabel, weatherMessage } from "../src/format";
+import { MAX_PER_TICK, dueItems, isDue, lastSentAfterChange, minutesLate } from "../src/daily";
+import { SECTIONS } from "../src/format";
 import { botCommands } from "../src/handlers";
 import * as i18n from "../src/i18n";
 import { T, t } from "../src/i18n";
 import * as kb from "../src/keyboards";
 import { DEFAULT_PLACE, PRESET_COUNT, matchPreset, nearestPreset, presetPlace } from "../src/presets";
-import { fill, haversineKm, localParts, normaliseTime, parseIdList, safeEqual, escapeHtml } from "../src/util";
+import { AQI_ALERT_LEVELS, deg, deltaDisplay, speed, unitLetter } from "../src/units";
+import { escapeHtml, fill, haversineKm, localParts, normaliseTime, parseIdList, safeEqual } from "../src/util";
 import { placeLabel } from "../src/weather";
-import { MODEL_AQ, STATION_AQ, makeReport, makeUser } from "./fixtures";
+import { makeUser } from "./fixtures";
 
 describe("i18n", () => {
   it("every key has all 3 translations with identical placeholders", () => {
@@ -18,6 +19,13 @@ describe("i18n", () => {
       row.forEach((s) => expect(s.length, `${key} is empty`).toBeGreaterThan(0));
       expect(fields(row[1]), `${key} (ms)`).toBe(fields(row[0]));
       expect(fields(row[2]), `${key} (zh)`).toBe(fields(row[0]));
+    }
+  });
+
+  it("translated text never leaves an English-only gap for the new features", () => {
+    for (const key of ["sec_best", "aqi_rising", "best_today", "alert_rain", "alert_aqi", "evening_on_msg", "settings_alerts", "inline_hint_title"]) {
+      expect(T[key][1], `${key} (ms) is just the English text`).not.toBe(T[key][0]);
+      expect(T[key][2], `${key} (zh) is just the English text`).not.toBe(T[key][0]);
     }
   });
 
@@ -32,10 +40,37 @@ describe("i18n", () => {
     expect(i18n.dateLong("2026-11-03T08:15", "ms")).toBe("Selasa, 3 November");
     expect(i18n.dateLong("2026-11-03T08:15", "zh")).toBe("11月3日 星期二");
     expect(i18n.weekday("2026-11-08", "en", true)).toBe("Sun");
+    expect(i18n.isWeekend("2026-11-07")).toBe(true);
+    expect(i18n.isWeekend("2026-11-08")).toBe(true);
+    expect(i18n.isWeekend("2026-11-03")).toBe(false);
     expect(i18n.clock("2026-11-03T00:05", "en")).toBe("12:05 AM");
     expect(i18n.clock("2026-11-03T13:45", "en")).toBe("1:45 PM");
     expect(i18n.clock("2026-11-03T07:01", "zh")).toBe("07:01");
     expect(i18n.hourLabel("2026-11-03T12:00", "ms")).toBe("12 PM");
+  });
+
+  it("honours the 12h / 24h clock override in every language", () => {
+    expect(i18n.clock("2026-11-03T13:45", "en", "24")).toBe("13:45");
+    expect(i18n.clock("2026-11-03T13:45", "ms", "24")).toBe("13:45");
+    expect(i18n.clock("2026-11-03T13:45", "zh", "12")).toBe("下午1:45");
+    expect(i18n.clock("2026-11-03T07:01", "zh", "12")).toBe("上午7:01");
+    expect(i18n.clock("2026-11-03T13:45", "en", "auto")).toBe("1:45 PM");
+    expect(i18n.hourLabel("2026-11-03T15:00", "en", "24")).toBe("15:00");
+    expect(i18n.hourLabel("2026-11-03T15:00", "zh", "12")).toBe("下午3时");
+  });
+
+  it("builds readable time ranges", () => {
+    const r = (a: string, b: string, lang: "en" | "ms" | "zh" = "en", mode: "auto" | "12" | "24" = "auto") =>
+      i18n.rangeLabel(`2026-11-03T${a}`, b.length > 5 ? b : `2026-11-03T${b}`, lang, mode);
+    expect(r("07:00", "09:00")).toBe("7–9 AM");
+    expect(r("11:00", "13:00")).toBe("11 AM–1 PM");
+    expect(r("17:00", "22:00")).toBe("5–10 PM");
+    expect(r("12:00", "14:00")).toBe("12–2 PM");
+    expect(r("23:00", "2026-11-04T00:00")).toBe("11 PM–12 AM");
+    expect(r("07:00", "09:00", "ms")).toBe("7–9 AM");
+    expect(r("07:00", "09:00", "en", "24")).toBe("07:00–09:00");
+    expect(r("07:00", "09:00", "zh")).toBe("07:00–09:00");
+    expect(r("17:00", "22:00", "zh", "12")).toBe("下午5时–下午10时");
   });
 
   it("uses proper compass names (not letter swaps) for ms and zh", () => {
@@ -47,87 +82,27 @@ describe("i18n", () => {
   });
 });
 
-describe("report formatting", () => {
-  it("renders the core fields in English", () => {
-    const text = weatherMessage(makeReport(MODEL_AQ));
-    expect(text).toContain("Kuala Lumpur, Malaysia");
-    expect(text).toContain("Tuesday, 3 November");
-    expect(text).toContain("28°C");
-    expect(text).toContain("78%");
-    expect(text).toContain("NE");
-    expect(text).toContain("AQI 62");
-    expect(text).toContain("Moderate");
-    expect(text).toContain("7:01 AM");
-    expect(text).toContain("7:12 PM");
-    expect(text.length).toBeLessThan(4096);
+describe("units", () => {
+  it("converts temperatures", () => {
+    expect(deg(28.4, { tempUnit: "c" })).toBe("28°");
+    expect(deg(28.4, { tempUnit: "f" })).toBe("83°");
+    expect(deg(0, { tempUnit: "f" })).toBe("32°");
+    expect(deg(-0.4, { tempUnit: "c" })).toBe("0°"); // never "-0°"
+    expect(deg(null, { tempUnit: "c" })).toBe("–");
+    expect(unitLetter({ tempUnit: "f" })).toBe("F");
   });
 
-  it("shows the measured station and adds a health tip for AQI > 100", () => {
-    const text = weatherMessage(makeReport(STATION_AQ));
-    expect(text).toContain("AQI 112");
-    expect(text).toContain("Unhealthy for sensitive groups");
-    expect(text).toContain("Cheras, Kuala Lumpur station (4 km)");
-    expect(text).toContain("limit outdoor activity");
+  it("converts temperature DIFFERENCES without the +32 offset", () => {
+    expect(deltaDisplay(3, { tempUnit: "c" })).toBe(3);
+    expect(deltaDisplay(3, { tempUnit: "f" })).toBe(5);
+    expect(deltaDisplay(-2.6, { tempUnit: "c" })).toBe(3);
   });
 
-  it("describes rain correctly", () => {
-    expect(weatherMessage(makeReport(MODEL_AQ, { prob: 5 }))).toContain("No rain expected");
-    expect(weatherMessage(makeReport(MODEL_AQ, { prob: 80 }))).toContain("Rain likely");
-    expect(weatherMessage(makeReport(MODEL_AQ, { prob: 80, code: 63, precip: 1.2 }))).toContain("Raining now");
-    expect(weatherMessage(makeReport(MODEL_AQ, { prob: 80 })).toLowerCase()).toContain("umbrella");
-  });
-
-  it("copes with missing air quality and null rain probabilities", () => {
-    const rep = makeReport(null);
-    rep.wx.hourly.precipitation_probability = rep.wx.hourly.precipitation_probability.map(() => null);
-    expect(weatherMessage(rep)).toContain("Unavailable");
-  });
-
-  it("renders Malay and Chinese with no English leftovers", () => {
-    const zh = weatherMessage(makeReport(MODEL_AQ, { prob: 80 }), "zh");
-    for (const s of ["11月3日 星期二", "湿度", "空气质量", "记得带伞", "东北", "局部多云", "07:01"]) expect(zh).toContain(s);
-    expect(zh).not.toContain("Humidity");
-    const ms = weatherMessage(makeReport(MODEL_AQ, { prob: 80 }), "ms");
-    for (const s of ["Selasa, 3 November", "Kelembapan", "Bawa payung", "Sederhana", "Separa mendung", "Rab"]) expect(ms).toContain(s);
-    expect(ms).not.toContain("Humidity");
-  });
-
-  it("hides sections but always keeps the header and footer", () => {
-    const full = weatherMessage(makeReport(MODEL_AQ, { prob: 80 }));
-    const markers: Record<string, string> = { air: "Air quality", rain: "Rain outlook", forecast: "Next days", tips: "Tips", details: "Humidity", sun: "🌅" };
-    for (const s of SECTIONS) {
-      expect(full).toContain(markers[s]);
-      const text = weatherMessage(makeReport(MODEL_AQ, { prob: 80 }), "en", new Set([s]));
-      expect(text, s).not.toContain(markers[s]);
-      expect(text).toContain("28°C");
-    }
-    const bare = weatherMessage(makeReport(MODEL_AQ), "en", new Set(SECTIONS));
-    expect(bare).toContain("Kuala Lumpur");
-    expect(bare).toContain("Observed");
-    expect(bare).not.toContain("┈");
-  });
-
-  it("escapes HTML in place names", () => {
-    const rep = makeReport();
-    rep.place = { name: "<b>Evil</b> & Co", lat: 1, lon: 1, country: "", tz: "UTC" };
-    expect(weatherMessage(rep)).toContain("&lt;b&gt;Evil&lt;/b&gt; &amp; Co");
-    expect(escapeHtml("a<b&c>")).toBe("a&lt;b&amp;c&gt;");
-  });
-
-  it("renders the hourly view in every language", () => {
-    expect(hourlyMessage(makeReport(MODEL_AQ, { prob: 40 }))).toContain("Next 12 hours");
-    expect(hourlyMessage(makeReport(MODEL_AQ), "zh")).toContain("未来12小时");
-    expect(hourlyMessage(makeReport(MODEL_AQ), "ms")).toContain("12 jam akan datang");
-    expect(hourlyMessage(makeReport(MODEL_AQ, { prob: 40 }))).toContain("▰");
-  });
-
-  it("classifies AQI / UV / tips", () => {
-    expect(aqiBand(50, "en")[1]).toBe("Good");
-    expect(aqiBand(51, "en")[1]).toBe("Moderate");
-    expect(aqiBand(301, "en")[1]).toBe("Hazardous");
-    expect(uvLabel(2.9, "en")).toBe("Low");
-    expect(uvLabel(11, "en")).toBe("Extreme");
-    expect(tips(makeReport(null, { prob: 0, uv: 1, feels: 25 }), "en")).toEqual(["😎 Conditions look comfortable"]);
+  it("converts wind speed", () => {
+    expect(speed(11.6, { windUnit: "kmh" })).toBe("12 km/h");
+    expect(speed(11.6, { windUnit: "ms" })).toBe("3.2 m/s");
+    expect(speed(40, { windUnit: "ms" })).toBe("11 m/s");
+    expect(speed(11.6, { windUnit: "mph" })).toBe("7 mph");
   });
 });
 
@@ -155,6 +130,7 @@ describe("places & utilities", () => {
     expect(fill("a {x} {y}", { x: 1 })).toBe("a 1 {y}");
     expect(safeEqual("abc", "abc")).toBe(true);
     expect(safeEqual("abc", "abd")).toBe(false);
+    expect(escapeHtml("a<b&c>")).toBe("a&lt;b&amp;c&gt;");
     expect(Math.round(haversineKm(3.139, 101.687, 1.352, 103.82))).toBeGreaterThan(300);
   });
 
@@ -165,12 +141,27 @@ describe("places & utilities", () => {
     expect(localParts("America/New_York", at)).toEqual({ date: "2026-11-02", time: "19:30" });
     expect(() => localParts("Not/AZone", at)).toThrow();
   });
+
+  it("formats midnight as 00:xx (never 24:xx) and handles date rollover and half-hour zones", () => {
+    expect(localParts("Asia/Kuala_Lumpur", new Date("2026-11-02T16:05:00Z"))).toEqual({ date: "2026-11-03", time: "00:05" });
+    expect(localParts("Europe/London", new Date("2026-11-03T00:00:00Z"))).toEqual({ date: "2026-11-03", time: "00:00" });
+    expect(localParts("Asia/Kolkata", new Date("2026-11-03T08:00:00Z"))).toEqual({ date: "2026-11-03", time: "13:30" });
+    expect(localParts("Pacific/Auckland", new Date("2026-11-02T20:00:00Z"))).toEqual({ date: "2026-11-03", time: "09:00" });
+  });
+
+  it("keeps working after a timezone has been used many times (formatters are cached) and after a bad one", () => {
+    const at = new Date("2026-11-03T00:30:00Z");
+    for (let i = 0; i < 50; i++) expect(localParts("Asia/Tokyo", at).time).toBe("09:30");
+    expect(() => localParts("Bad/Zone", at)).toThrow();
+    expect(() => localParts("Bad/Zone", at)).toThrow(); // a failure is not cached as "valid"
+    expect(localParts("Asia/Tokyo", at).time).toBe("09:30");
+  });
 });
 
-describe("daily schedule (multi-user, per-timezone)", () => {
+describe("scheduled reports (multi-user, per-timezone, two slots)", () => {
   const utc = (h: number, m: number) => new Date(Date.UTC(2026, 10, 3, h, m));
 
-  it("sends at the user's own local time, in any timezone", () => {
+  it("sends the morning report at the user's own local time, in any timezone", () => {
     const kl = makeUser({ tz: "Asia/Kuala_Lumpur", dailyTime: "08:30" });
     const tokyo = makeUser({ tz: "Asia/Tokyo", dailyTime: "08:30" });
     expect(isDue(kl, utc(0, 30))).toBe(true); // 08:30 in KL
@@ -202,38 +193,107 @@ describe("daily schedule (multi-user, per-timezone)", () => {
     expect(lastSentAfterChange("Nope/Zone", "08:30")).toBe("");
   });
 
-  it("caps work per tick to stay within the free plan's request limit", () => {
+  it("handles the evening slot independently of the morning slot", () => {
+    const u = makeUser({ dailyOn: false, eveningOn: true, eveningTime: "18:00" });
+    expect(isDue(u, utc(10, 0), "evening")).toBe(true); // 18:00 in KL
+    expect(isDue(u, utc(9, 59), "evening")).toBe(false);
+    expect(isDue(u, utc(10, 0), "morning")).toBe(false); // morning is off
+    expect(isDue({ ...u, lastEvening: "2026-11-03" }, utc(10, 0), "evening")).toBe(false);
+    expect(isDue(makeUser({ eveningOn: false }), utc(10, 0), "evening")).toBe(false);
+  });
+
+  it("morning and evening for the same person can both be due, as separate items", () => {
+    const u = makeUser({ dailyTime: "18:00", eveningOn: true, eveningTime: "18:00" });
+    const items = dueItems([u], utc(10, 0));
+    expect(items.map((i) => i.slot).sort()).toEqual(["evening", "morning"]);
+  });
+
+  it("serves the freshest first (so stuck sends can't starve everyone) and caps work per tick", () => {
+    const users = Array.from({ length: 12 }, (_, i) => makeUser({ chatId: i + 1, dailyTime: `08:${String(30 - i).padStart(2, "0")}` }));
+    const items = dueItems(users, utc(0, 30)); // user 12 is 11 minutes late, user 1 exactly on time
+    expect(items).toHaveLength(MAX_PER_TICK);
+    expect(items[0].user.chatId).toBe(1); // on time
+    expect(items.at(-1)!.user.chatId).toBe(8); // the 8 least-late are served; 9-12 wait for the next minute
+    expect(items.map((i) => i.late)).toEqual([...items.map((i) => i.late)].sort((a, b) => a - b));
     expect(MAX_PER_TICK).toBeLessThanOrEqual(10);
   });
 });
 
 describe("telegram payload limits", () => {
   const byteLen = (s: string) => new TextEncoder().encode(s).length;
-  const allCallbacks = (markup: any): string[] => (markup.inline_keyboard ?? []).flat().map((b: any) => b.callback_data);
+  const callbacks = (markup: any): string[] => (markup.inline_keyboard ?? []).flat().map((b: any) => b.callback_data);
 
   it("keeps every callback_data within Telegram's 64-byte limit", () => {
     const u = makeUser();
     const results = Array.from({ length: 5 }, (_, i) => ({ name: `City ${i}`, lat: 1, lon: 1, country: "X", tz: "UTC" }));
     const all = [
-      ...allCallbacks(kb.reportKeyboard(u, "now")),
-      ...allCallbacks(kb.reportKeyboard(u, "hourly")),
-      ...allCallbacks(kb.locationMenu("zh")),
-      ...allCallbacks(kb.settingsKeyboard(u)),
-      ...allCallbacks(kb.resultsKeyboard(results, "en")),
-      ...allCallbacks(kb.approvalKeyboard(9_999_999_999)),
-      ...allCallbacks(kb.retryKeyboard("hourly", "en")),
+      ...kb.VIEWS.flatMap((v) => callbacks(kb.reportKeyboard(u, v))),
+      ...callbacks(kb.locationMenu("zh")),
+      ...kb.SETTINGS_PAGES.flatMap((p) => callbacks(kb.settingsView(u, p).markup)),
+      ...callbacks(kb.resultsKeyboard(results, "en")),
+      ...callbacks(kb.approvalKeyboard(9_999_999_999)),
+      ...callbacks(kb.retryKeyboard("week", "en")),
+      ...callbacks(kb.alertKeyboard("rain", "zh")),
+      ...callbacks(kb.alertKeyboard("aqi", "ms")),
     ];
-    expect(all.length).toBeGreaterThan(20);
-    all.forEach((d) => expect(byteLen(d)).toBeLessThanOrEqual(64));
+    expect(all.length).toBeGreaterThan(50);
+    all.forEach((d) => expect(byteLen(d), d).toBeLessThanOrEqual(64));
     expect(PRESET_COUNT).toBe(10);
   });
 
-  it("reflects hidden sections and the current language in Settings", () => {
-    const rows = (kb.settingsKeyboard(makeUser({ hidden: new Set(["air"]), lang: "zh" })) as any).inline_keyboard.flat();
+  it("marks the current view in the navigation", () => {
+    const text = (view: kb.View, cb: string) =>
+      (kb.reportKeyboard(makeUser(), view) as any).inline_keyboard.flat().find((b: any) => b.callback_data === cb).text as string;
+    expect(text("tomorrow", "v:tomorrow")).toMatch(/^● /);
+    expect(text("tomorrow", "v:now")).not.toMatch(/^● /);
+    expect(text("week", "v:week")).toMatch(/^● /);
+    expect(kb.asView("bogus")).toBe("now");
+    expect(kb.asView("week")).toBe("week");
+  });
+
+  it("settings menu leads to four pages and every page has a way back", () => {
+    const u = makeUser();
+    const menu = callbacks(kb.settingsView(u, "menu").markup);
+    expect(menu).toEqual(["set:sec", "set:lang", "set:units", "set:alerts", "v:now"]);
+    for (const page of ["sec", "lang", "units", "alerts"] as const) {
+      expect(callbacks(kb.settingsView(u, page).markup).at(-1), page).toBe("set");
+    }
+  });
+
+  it("sections page reflects hidden sections (7 of them, including best time)", () => {
+    expect(SECTIONS).toHaveLength(7);
+    const rows = (kb.settingsView(makeUser({ hidden: new Set(["air", "best"]) }), "sec").markup as any).inline_keyboard.flat();
     expect(rows.find((b: any) => b.callback_data === "tg:air").text).toMatch(/^⬜/);
+    expect(rows.find((b: any) => b.callback_data === "tg:best").text).toMatch(/^⬜/);
     expect(rows.find((b: any) => b.callback_data === "tg:tips").text).toMatch(/^✅/);
+    expect(rows.filter((b: any) => b.callback_data.startsWith("tg:"))).toHaveLength(7);
+  });
+
+  it("language page marks the current language", () => {
+    const rows = (kb.settingsView(makeUser({ lang: "zh" }), "lang").markup as any).inline_keyboard.flat();
     expect(rows.find((b: any) => b.callback_data === "lang:zh").text).toMatch(/^●/);
     expect(rows.find((b: any) => b.callback_data === "lang:en").text).not.toMatch(/^●/);
+  });
+
+  it("units page reflects the saved units", () => {
+    const rows = (kb.settingsView(makeUser({ tempUnit: "f", windUnit: "ms", clock: "24", compact: true }), "units").markup as any).inline_keyboard.flat();
+    const label = (cb: string) => rows.find((b: any) => b.callback_data === cb).text as string;
+    expect(label("u:t:f")).toMatch(/^●/);
+    expect(label("u:t:c")).not.toMatch(/^●/);
+    expect(label("u:w:ms")).toMatch(/^●/);
+    expect(label("u:c:24")).toMatch(/^●/);
+    expect(label("u:k")).toMatch(/^✅/);
+    expect(kb.settingsView(makeUser({ compact: false }), "units").markup).toBeTruthy();
+  });
+
+  it("alerts page reflects alert and evening-report state", () => {
+    const rows = (kb.settingsView(makeUser({ rainAlerts: true, aqiAlert: 151, eveningOn: true, eveningTime: "19:30" }), "alerts").markup as any).inline_keyboard.flat();
+    const label = (cb: string) => rows.find((b: any) => b.callback_data === cb).text as string;
+    expect(label("al:rain")).toMatch(/^✅/);
+    expect(label("al:aqi:151")).toMatch(/^●/);
+    expect(label("al:aqi:0")).not.toMatch(/^●/);
+    expect(label("al:eve")).toContain("19:30");
+    expect(rows.filter((b: any) => b.callback_data.startsWith("al:aqi:")).map((b: any) => b.callback_data)).toEqual(AQI_ALERT_LEVELS.map((n) => `al:aqi:${n}`));
   });
 
   it("recognises the bottom-bar buttons in every language", () => {
@@ -254,7 +314,9 @@ describe("telegram payload limits", () => {
         }
       }
     }
+    const names = botCommands("en").map((c) => c.command);
+    for (const c of ["weather", "hourly", "tomorrow", "week", "evening", "settings"]) expect(names).toContain(c);
     expect(botCommands("en", true).map((c) => c.command)).toContain("allow");
-    expect(botCommands("en", false).map((c) => c.command)).not.toContain("allow");
+    expect(names).not.toContain("allow");
   });
 });

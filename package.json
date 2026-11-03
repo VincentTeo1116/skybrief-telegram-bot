@@ -1,17 +1,18 @@
 {
   "name": "skybrief",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "SkyBrief: Telegram weather & air-quality bot on Cloudflare Workers",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler d1 migrations apply skybrief --remote && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "node scripts/integration.mjs",
     "db:migrate:local": "wrangler d1 migrations apply skybrief --local",
-    "db:migrate:remote": "wrangler d1 migrations apply skybrief --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply skybrief --remote",
+    "test:live": "node scripts/live.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261103.1",

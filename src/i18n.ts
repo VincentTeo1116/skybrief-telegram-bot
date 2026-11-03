@@ -3,7 +3,7 @@
  * To add a language: add its code to LANGS / IDX, then append a translation to every row below
  * (a missing translation falls back to English).
  */
-import type { Lang } from "./types";
+import type { ClockMode, Lang } from "./types";
 import { fill } from "./util";
 
 export const LANGS: Record<Lang, string> = { en: "🇬🇧 English", ms: "🇲🇾 Bahasa Melayu", zh: "🇨🇳 中文" };
@@ -112,18 +112,18 @@ export const T: Record<string, Row> = {
       "⚙️ 点击<b>设置</b>可选择显示内容并切换语言。",
   ],
   help: [
-    "<b>Commands</b>\n/weather: current weather &amp; air quality\n/hourly: next 12 hours\n" +
-      "/city: change location (or just type a city name)\n/daily: turn the daily report on or off\n" +
-      "/settime 07:45: change the daily report time\n/settings: choose what to show &amp; language\n" +
-      "/help: this message\n\n📍 Share your GPS location with the bottom button to auto-detect where you are.",
-    "<b>Arahan</b>\n/weather: cuaca &amp; kualiti udara semasa\n/hourly: 12 jam akan datang\n" +
-      "/city: tukar lokasi (atau taip nama bandar)\n/daily: hidup/matikan laporan harian\n" +
-      "/settime 07:45: tukar masa laporan harian\n/settings: pilih paparan &amp; bahasa\n" +
-      "/help: mesej ini\n\n📍 Kongsi lokasi GPS anda melalui butang di bawah untuk pengesanan automatik.",
-    "<b>命令</b>\n/weather：当前天气与空气质量\n/hourly：未来12小时\n" +
-      "/city：更换位置（也可直接输入城市名）\n/daily：开启/关闭每日报告\n" +
-      "/settime 07:45：修改每日报告时间\n/settings：选择显示内容与语言\n" +
-      "/help：显示此帮助\n\n📍 点击底部按钮分享 GPS 位置，可自动定位。",
+    "<b>Commands</b>\n/weather: current weather &amp; air quality\n/hourly: next 12 hours\n/tomorrow: tomorrow's forecast\n/week: 7-day outlook\n" +
+      "/city: change location (or just type a city name)\n/daily: morning report on or off\n" +
+      "/settime 07:45: change the morning report time\n/evening [19:00]: evening report (tomorrow's outlook)\n" +
+      "/settings: sections, language, units, alerts\n/help: this message\n\n📍 Share your GPS location with the bottom button to auto-detect where you are.\n💡 Type @SkyBrief_AI_bot and a city in any chat to share its weather.",
+    "<b>Arahan</b>\n/weather: cuaca &amp; kualiti udara semasa\n/hourly: 12 jam akan datang\n/tomorrow: ramalan esok\n/week: ramalan 7 hari\n" +
+      "/city: tukar lokasi (atau taip nama bandar)\n/daily: hidup/matikan laporan pagi\n" +
+      "/settime 07:45: tukar masa laporan pagi\n/evening [19:00]: laporan petang (ramalan esok)\n" +
+      "/settings: bahagian, bahasa, unit, amaran\n/help: mesej ini\n\n📍 Kongsi lokasi GPS anda melalui butang di bawah untuk pengesanan automatik.\n💡 Taip @SkyBrief_AI_bot dan nama bandar dalam mana-mana sembang untuk berkongsi cuaca.",
+    "<b>命令</b>\n/weather：当前天气与空气质量\n/hourly：未来12小时\n/tomorrow：明天的预报\n/week：7天预报\n" +
+      "/city：更换位置（也可直接输入城市名）\n/daily：开启/关闭早间报告\n" +
+      "/settime 07:45：修改早间报告时间\n/evening [19:00]：晚间报告（明天的预报）\n" +
+      "/settings：内容、语言、单位、提醒\n/help：显示此帮助\n\n📍 点击底部按钮分享 GPS 位置，可自动定位。\n💡 在任意聊天中输入 @SkyBrief_AI_bot 加城市名，即可分享天气。",
   ],
   // ---- reply keyboard + inline buttons
   btn_now: ["🌦 Weather now", "🌦 Cuaca sekarang", "🌦 当前天气"],
@@ -133,7 +133,6 @@ export const T: Record<string, Row> = {
   placeholder: ["Type a city name…", "Taip nama bandar…", "输入城市名称…"],
   b_refresh: ["🔄 Refresh", "🔄 Muat semula", "🔄 刷新"],
   b_hourly: ["⏱ Hourly", "⏱ Setiap jam", "⏱ 逐小时"],
-  b_overview: ["📋 Overview", "📋 Ringkasan", "📋 概览"],
   b_change: ["📍 Change location", "📍 Tukar lokasi", "📍 更换位置"],
   b_daily_on: ["🔔 Daily {time}: ON", "🔔 Harian {time}: HIDUP", "🔔 每日 {time}：开"],
   b_daily_off: ["🔕 Daily: OFF", "🔕 Harian: MATI", "🔕 每日：关"],
@@ -213,9 +212,9 @@ export const T: Record<string, Row> = {
     "✅ 每日报告时间已设为 <b>{time}</b>（{tz}）。",
   ],
   settings_text: [
-    "⚙️ <b>Settings</b>\n\nTap a section to show ✅ or hide ⬜ it in your reports, or choose a language.",
-    "⚙️ <b>Tetapan</b>\n\nKetik bahagian untuk papar ✅ atau sembunyi ⬜ dalam laporan anda, atau pilih bahasa.",
-    "⚙️ <b>设置</b>\n\n点击各部分可在报告中显示 ✅ 或隐藏 ⬜，也可在下方选择语言。",
+    "📋 <b>Report sections</b>\n\nTap a section to show ✅ or hide ⬜ it in your reports.",
+    "📋 <b>Bahagian laporan</b>\n\nKetik bahagian untuk papar ✅ atau sembunyi ⬜ dalam laporan anda.",
+    "📋 <b>报告内容</b>\n\n点击各部分可在报告中显示 ✅ 或隐藏 ⬜。",
   ],
   lang_changed: ["✅ Language set to English.", "✅ Bahasa ditukar kepada Bahasa Melayu.", "✅ 语言已切换为中文。"],
   // ---- access control (multi-user)
@@ -234,6 +233,134 @@ export const T: Record<string, Row> = {
     "🔒 Ini bot peribadi. Minta pemiliknya untuk menambah anda.",
     "🔒 这是私人机器人，请联系所有者添加您。",
   ],
+  // ---- v2.1: best time outside, trend, AQI outlook
+  sec_best: ["Best time outside", "Waktu terbaik di luar", "户外最佳时段"],
+  today: ["Today", "Hari ini", "今天"],
+  tomorrow: ["Tomorrow", "Esok", "明天"],
+  trend_warmer: ["{d}° warmer than yesterday", "{d}° lebih panas daripada semalam", "比昨天热 {d}°"],
+  trend_cooler: ["{d}° cooler than yesterday", "{d}° lebih sejuk daripada semalam", "比昨天凉 {d}°"],
+  aqi_rising: [
+    "Rising: peak ~{aqi} around {h} (model)",
+    "Meningkat: puncak ~{aqi} sekitar {h} (model)",
+    "将上升：{h} 前后达到约 {aqi}（模型）",
+  ],
+  aqi_falling: [
+    "Improving: ~{aqi} by {h} (model)",
+    "Bertambah baik: ~{aqi} menjelang {h} (model)",
+    "将好转：{h} 前后降至约 {aqi}（模型）",
+  ],
+  aqi_steady: [
+    "Steady around {aqi} for the next hours (model)",
+    "Stabil sekitar {aqi} dalam beberapa jam akan datang (model)",
+    "未来数小时保持在约 {aqi}（模型）",
+  ],
+  aqi_tomorrow: [
+    "Expected peak ~{aqi} around {h} (model)",
+    "Puncak dijangka ~{aqi} sekitar {h} (model)",
+    "预计 {h} 前后达到峰值约 {aqi}（模型）",
+  ],
+  best_today: ["Today: {r}", "Hari ini: {r}", "今天：{r}"],
+  best_tomorrow: ["Tomorrow: {r}", "Esok: {r}", "明天：{r}"],
+  best_none_today: ["No comfortable window left today", "Tiada tempoh selesa lagi hari ini", "今天已没有舒适的时段"],
+  best_none_tomorrow: ["Tomorrow: no comfortable window", "Esok: tiada tempoh yang selesa", "明天：没有舒适的时段"],
+  best_hint: [
+    "comfortable temperature, low UV, dry, clean air",
+    "suhu selesa, UV rendah, kering, udara bersih",
+    "气温舒适、紫外线低、无雨、空气清洁",
+  ],
+  // ---- v2.1: tomorrow / week views
+  week_title: ["7-day outlook", "Ramalan 7 hari", "7天预报"],
+  p_morning: ["Morning", "Pagi", "上午"],
+  p_afternoon: ["Afternoon", "Tengah hari", "下午"],
+  p_evening: ["Evening", "Petang", "傍晚"],
+  rain_chance_day: ["Rain chance {p}%", "Kebarangkalian hujan {p}%", "降雨概率 {p}%"],
+  rain_total: [" · {mm} mm expected", " · dijangka {mm} mm", " · 预计 {mm} 毫米"],
+  wind_up_to: ["Wind up to {w}", "Angin sehingga {w}", "风速最高 {w}"],
+  week_rainiest: ["Rainiest day: {d} ({p}%)", "Hari paling hujan: {d} ({p}%)", "降雨最多：{d}（{p}%）"],
+  ribbon_evening: [
+    "Good evening! Here's tomorrow's outlook",
+    "Selamat petang! Ini ramalan esok",
+    "晚上好！这是明天的预报",
+  ],
+  src_weather_backup: [
+    "Weather: MET Norway (backup source)",
+    "Cuaca: MET Norway (sumber sandaran)",
+    "天气：MET Norway（备用数据源）",
+  ],
+  b_today: ["📋 Today", "📋 Hari ini", "📋 今天"],
+  b_tomorrow: ["🌅 Tomorrow", "🌅 Esok", "🌅 明天"],
+  b_week: ["🗓 7-day", "🗓 7 hari", "🗓 7天"],
+  // ---- v2.1: settings pages
+  settings_menu: [
+    "⚙️ <b>Settings</b>\n\nWhat would you like to change?",
+    "⚙️ <b>Tetapan</b>\n\nApa yang anda mahu ubah?",
+    "⚙️ <b>设置</b>\n\n您想修改什么？",
+  ],
+  settings_lang: ["🌐 <b>Language</b>\n\nChoose your language:", "🌐 <b>Bahasa</b>\n\nPilih bahasa anda:", "🌐 <b>语言</b>\n\n请选择语言："],
+  settings_units: [
+    "📐 <b>Units &amp; display</b>\n\nChoose how numbers and times are shown. Compact mode gives a much shorter report.",
+    "📐 <b>Unit &amp; paparan</b>\n\nPilih cara nombor dan masa dipaparkan. Mod ringkas memberi laporan yang jauh lebih pendek.",
+    "📐 <b>单位与显示</b>\n\n选择数字和时间的显示方式。简洁模式会让报告短得多。",
+  ],
+  settings_alerts: [
+    "🔔 <b>Alerts &amp; reports</b>\n\n🌧 Rain alerts: a heads-up when rain is likely within the next 1–2 hours.\n😷 AQI alert: a message when air quality reaches the level you pick (101 = unhealthy for sensitive groups, 151 = unhealthy, 201 = very unhealthy).\n🌙 Evening report: tomorrow's outlook every evening (change the time with /evening 19:00).\n\nAlerts are paused overnight (22:00–06:30 by default, your local time).",
+    "🔔 <b>Amaran &amp; laporan</b>\n\n🌧 Amaran hujan: pemberitahuan apabila hujan berkemungkinan dalam 1–2 jam akan datang.\n😷 Amaran AQI: mesej apabila kualiti udara mencapai tahap pilihan anda (101 = tidak sihat untuk golongan sensitif, 151 = tidak sihat, 201 = sangat tidak sihat).\n🌙 Laporan petang: ramalan esok setiap petang (tukar masa dengan /evening 19:00).\n\nAmaran dihentikan pada waktu malam (lalai 22:00–06:30, waktu tempatan anda).",
+    "🔔 <b>提醒与报告</b>\n\n🌧 降雨提醒：未来1–2小时可能下雨时通知您。\n😷 AQI 提醒：空气质量达到您选择的级别时通知（101 = 对敏感人群不健康，151 = 不健康，201 = 非常不健康）。\n🌙 晚间报告：每晚发送明天的预报（用 /evening 19:00 修改时间）。\n\n提醒在夜间暂停（默认当地时间 22:00–06:30）。",
+  ],
+  m_sections: ["📋 Report sections", "📋 Bahagian laporan", "📋 报告内容"],
+  m_lang: ["🌐 Language", "🌐 Bahasa", "🌐 语言"],
+  m_units: ["📐 Units & display", "📐 Unit & paparan", "📐 单位与显示"],
+  m_alerts: ["🔔 Alerts & reports", "🔔 Amaran & laporan", "🔔 提醒与报告"],
+  clock_auto: ["🕒 Auto", "🕒 Auto", "🕒 自动"],
+  clock_12: ["🕒 12h", "🕒 12 jam", "🕒 12小时"],
+  clock_24: ["🕒 24h", "🕒 24 jam", "🕒 24小时"],
+  compact_on: ["✅ Compact report: ON", "✅ Laporan ringkas: HIDUP", "✅ 简洁模式：开"],
+  compact_off: ["⬜ Compact report: OFF", "⬜ Laporan ringkas: MATI", "⬜ 简洁模式：关"],
+  a_rain_on: ["✅ 🌧 Rain alerts: ON", "✅ 🌧 Amaran hujan: HIDUP", "✅ 🌧 降雨提醒：开"],
+  a_rain_off: ["⬜ 🌧 Rain alerts: OFF", "⬜ 🌧 Amaran hujan: MATI", "⬜ 🌧 降雨提醒：关"],
+  a_aqi_off: ["😷 AQI: off", "😷 AQI: mati", "😷 AQI：关"],
+  a_aqi_at: ["AQI ≥{n}", "AQI ≥{n}", "AQI ≥{n}"],
+  a_eve_on: ["✅ 🌙 Evening report {time}: ON", "✅ 🌙 Laporan petang {time}: HIDUP", "✅ 🌙 晚间报告 {time}：开"],
+  a_eve_off: ["⬜ 🌙 Evening report: OFF", "⬜ 🌙 Laporan petang: MATI", "⬜ 🌙 晚间报告：关"],
+  // ---- v2.1: alerts
+  alert_rain: [
+    "🌧 <b>Rain alert</b> · {place}\nRain likely around {h} ({p}%). Bring an umbrella ☂️",
+    "🌧 <b>Amaran hujan</b> · {place}\nHujan berkemungkinan sekitar {h} ({p}%). Bawa payung ☂️",
+    "🌧 <b>降雨提醒</b> · {place}\n{h} 前后可能下雨（{p}%）。请带伞 ☂️",
+  ],
+  alert_aqi: [
+    "😷 <b>Air-quality alert</b> · {place}\nAQI is now <b>{aqi}</b> ({label}).\n{advice}",
+    "😷 <b>Amaran kualiti udara</b> · {place}\nAQI kini <b>{aqi}</b> ({label}).\n{advice}",
+    "😷 <b>空气质量提醒</b> · {place}\n当前 AQI 为 <b>{aqi}</b>（{label}）。\n{advice}",
+  ],
+  b_mute: ["🔕 Mute these alerts", "🔕 Matikan amaran ini", "🔕 关闭此类提醒"],
+  b_report: ["📋 Full report", "📋 Laporan penuh", "📋 完整报告"],
+  toast_muted: ["Muted 🔕", "Dimatikan 🔕", "已关闭 🔕"],
+  // ---- v2.1: evening report
+  evening_on_msg: [
+    "🌙 Evening report is <b>ON</b>: tomorrow's outlook every day at <b>{time}</b> ({tz}).",
+    "🌙 Laporan petang <b>HIDUP</b>: ramalan esok setiap hari pada <b>{time}</b> ({tz}).",
+    "🌙 晚间报告<b>已开启</b>：每天 <b>{time}</b>（{tz}）发送明天的预报。",
+  ],
+  evening_off_msg: [
+    "🌙 Evening report is <b>OFF</b>. Send /evening to turn it on.",
+    "🌙 Laporan petang <b>MATI</b>. Hantar /evening untuk menghidupkan.",
+    "🌙 晚间报告<b>已关闭</b>。发送 /evening 可开启。",
+  ],
+  evening_usage: [
+    "Usage: <code>/evening 19:00</code> (24-hour clock), or just /evening to switch it on or off",
+    "Penggunaan: <code>/evening 19:00</code> (waktu 24 jam), atau /evening sahaja untuk hidup/mati",
+    "用法：<code>/evening 19:00</code>（24小时制），或直接发送 /evening 开启/关闭",
+  ],
+  // ---- v2.1: inline mode
+  inline_open: ["Open SkyBrief", "Buka SkyBrief", "打开 SkyBrief"],
+  inline_hint_title: ["Type a city name", "Taip nama bandar", "输入城市名称"],
+  inline_hint_desc: ["e.g. Ipoh, Penang, Tokyo", "cth. Ipoh, Penang, Tokyo", "例如：怡保、槟城、Tokyo"],
+  inline_hint_text: [
+    "Type a city name after the bot's name, e.g. Ipoh",
+    "Taip nama bandar selepas nama bot, cth. Ipoh",
+    "请在机器人名称后输入城市名，例如：怡保",
+  ],
   // ---- bot command menu
   cmd_weather: ["Current weather & air quality", "Cuaca & kualiti udara semasa", "当前天气与空气质量"],
   cmd_hourly: ["Next 12 hours", "12 jam akan datang", "未来12小时"],
@@ -241,6 +368,9 @@ export const T: Record<string, Row> = {
   cmd_daily: ["Turn daily report on/off", "Hidup/matikan laporan harian", "开启/关闭每日报告"],
   cmd_settime: ["Set daily time, e.g. /settime 07:45", "Tetapkan masa harian, cth. /settime 07:45", "设置每日时间，如 /settime 07:45"],
   cmd_settings: ["What to show & language", "Paparan & bahasa", "显示内容与语言"],
+  cmd_tomorrow: ["Tomorrow's forecast", "Ramalan esok", "明天的预报"],
+  cmd_week: ["7-day outlook", "Ramalan 7 hari", "7天预报"],
+  cmd_evening: ["Evening report on/off or time", "Laporan petang hidup/mati atau masa", "晚间报告开关或时间"],
   cmd_help: ["Show help", "Tunjuk bantuan", "查看帮助"],
 };
 
@@ -359,6 +489,11 @@ function weekdayIndex(iso: string): number {
   return (new Date(Date.UTC(y, mo - 1, da)).getUTCDay() + 6) % 7;
 }
 
+/** Saturday or Sunday? */
+export function isWeekend(iso: string): boolean {
+  return weekdayIndex(iso) >= 5;
+}
+
 export function weekday(iso: string, lang: Lang, short = false): string {
   return (short ? WEEKDAYS_SHORT : WEEKDAYS)[normLang(lang)][weekdayIndex(iso)];
 }
@@ -372,14 +507,34 @@ export function dateLong(iso: string, lang: Lang): string {
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-export function clock(iso: string, lang: Lang): string {
-  const { h, mi } = parseLocal(iso);
-  if (normLang(lang) === "zh") return `${pad2(h)}:${pad2(mi)}`;
-  return `${h % 12 || 12}:${pad2(mi)} ${h < 12 ? "AM" : "PM"}`;
+/** 12h or 24h? "auto" follows the language (Chinese: 24h; English/Malay: 12h). */
+export function use12h(lang: Lang, mode: ClockMode = "auto"): boolean {
+  return mode === "12" ? true : mode === "24" ? false : normLang(lang) !== "zh";
 }
 
-export function hourLabel(iso: string, lang: Lang): string {
+const meridian = (h: number, lang: Lang) => (normLang(lang) === "zh" ? (h < 12 ? "上午" : "下午") : h < 12 ? "AM" : "PM");
+
+export function clock(iso: string, lang: Lang, mode: ClockMode = "auto"): string {
+  const { h, mi } = parseLocal(iso);
+  if (!use12h(lang, mode)) return `${pad2(h)}:${pad2(mi)}`;
+  const h12 = h % 12 || 12;
+  return normLang(lang) === "zh" ? `${meridian(h, lang)}${h12}:${pad2(mi)}` : `${h12}:${pad2(mi)} ${meridian(h, lang)}`;
+}
+
+export function hourLabel(iso: string, lang: Lang, mode: ClockMode = "auto"): string {
   const { h } = parseLocal(iso);
-  if (normLang(lang) === "zh") return `${pad2(h)}:00`;
-  return `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
+  if (!use12h(lang, mode)) return `${pad2(h)}:00`;
+  const h12 = h % 12 || 12;
+  return normLang(lang) === "zh" ? `${meridian(h, lang)}${h12}时` : `${h12} ${meridian(h, lang)}`;
+}
+
+/** "7–9 AM", "11 AM–1 PM", "07:00–09:00". `endIso` is the END boundary (the hour after the last good hour). */
+export function rangeLabel(startIso: string, endIso: string, lang: Lang, mode: ClockMode = "auto"): string {
+  const a = parseLocal(startIso);
+  const b = parseLocal(endIso);
+  if (use12h(lang, mode) && normLang(lang) !== "zh" && a.h < 12 === b.h < 12) {
+    // same AM/PM on both sides: say it once ("7–9 AM")
+    return `${a.h % 12 || 12}–${b.h % 12 || 12} ${meridian(b.h, lang)}`;
+  }
+  return `${hourLabel(startIso, lang, mode)}–${hourLabel(endIso, lang, mode)}`;
 }

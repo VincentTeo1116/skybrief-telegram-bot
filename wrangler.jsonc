@@ -23,7 +23,9 @@
 		// open     = anyone can use the bot immediately
 		// closed   = only people an admin added with /allow
 		"ACCESS_MODE": "approval",
-		"DEFAULT_DAILY_TIME": "08:30"
+		"DEFAULT_DAILY_TIME": "08:30",
+		// Rain / air-quality alerts are not sent between these local hours. Use "off" to disable the pause.
+		"QUIET_HOURS": "22:00-06:30"
 	},
 	"observability": {
 		"enabled": true

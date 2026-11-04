@@ -21,6 +21,7 @@ import {
 import type { Lang, Prefs, Report } from "./types";
 import { deg, deltaDisplay, speed, unitLetter } from "./units";
 import { escapeHtml as esc } from "./util";
+import { clip, stateSegment, type State, type Warning } from "./warnings";
 import { placeLabel } from "./weather";
 
 export const SECTIONS = ["details", "sun", "air", "rain", "best", "forecast", "tips"] as const;
@@ -199,11 +200,12 @@ function footer(r: Report, p: Prefs): string {
 }
 
 // ------------------------------------------------------------------ views
-export function weatherMessage(r: Report, p: Prefs, ribbon?: string): string {
-  return p.compact ? compactMessage(r, p, ribbon) : fullMessage(r, p, ribbon);
+/** `warnings` = official warnings that apply to this user's state (already filtered); shown at the top. */
+export function weatherMessage(r: Report, p: Prefs, ribbon?: string, warnings: Warning[] = []): string {
+  return p.compact ? compactMessage(r, p, ribbon, warnings) : fullMessage(r, p, ribbon, warnings);
 }
 
-function fullMessage(r: Report, p: Prefs, ribbon?: string): string {
+function fullMessage(r: Report, p: Prefs, ribbon: string | undefined, warnings: Warning[]): string {
   const lang = p.lang;
   const hidden = p.hidden;
   const c = r.wx.current;
@@ -223,6 +225,8 @@ function fullMessage(r: Report, p: Prefs, ribbon?: string): string {
   const tr = trendLine(r, p);
   if (tr) head.push(tr);
   const blocks: string[] = [head.join("\n")];
+  const wblock = warningBlock(warnings, p, c.time);
+  if (wblock) blocks.push(wblock);
 
   const facts: string[] = [];
   if (!hidden.has("details")) {
@@ -251,7 +255,7 @@ function fullMessage(r: Report, p: Prefs, ribbon?: string): string {
 }
 
 /** The short version: a handful of lines that fit on one phone screen. Still honours hidden sections. */
-function compactMessage(r: Report, p: Prefs, ribbon?: string): string {
+function compactMessage(r: Report, p: Prefs, ribbon: string | undefined, warnings: Warning[]): string {
   const lang = p.lang;
   const hidden = p.hidden;
   const c = r.wx.current;
@@ -266,6 +270,10 @@ function compactMessage(r: Report, p: Prefs, ribbon?: string): string {
     `${emoji} <b>${deg(c.temperature_2m, p)}${unitLetter(p)}</b> · ${desc}`,
     `${t(lang, "feels")} ${deg(c.apparent_temperature, p)} · ▲ ${deg(d.temperature_2m_max[di], p)} ▼ ${deg(d.temperature_2m_min[di], p)}`,
   );
+  if (warnings.length) {
+    const first = `⚠️ <b>${esc(wTitle(warnings[0], lang))}</b> (${t(lang, "warn_until", { t: wLabel(warnings[0].to!, p, c.time) })})`;
+    lines.push(first + (warnings.length > 1 ? ` +${warnings.length - 1}` : ""));
+  }
   const parts: string[] = [];
   if (!hidden.has("details")) {
     const dir = c.wind_direction_10m != null ? i18n.compassDir(c.wind_direction_10m, lang) : "";
@@ -416,7 +424,7 @@ export function inlineCard(r: Report, p: Prefs): { title: string; description: s
   return {
     title: placeLabel(r.place),
     description: `${emoji} ${deg(c.temperature_2m, p)}${unitLetter(p)} · ${desc}${r.aq ? ` · AQI ${r.aq.aqi}` : ""}`,
-    text: compactMessage(r, { ...p, compact: true }),
+    text: compactMessage(r, { ...p, compact: true }, undefined, []),
   };
 }
 
@@ -427,3 +435,52 @@ export function welcomeMessage(lang: Lang, firstName: string, placeLabelText: st
 
 // re-exported for tests / callers that need them
 export { RAIN_CODES, STORM_CODES };
+
+// ------------------------------------------------------------ official warnings
+const wTitle = (w: Warning, lang: Lang) => (lang === "ms" ? w.titleBm : w.titleEn);
+const wText = (w: Warning, lang: Lang) => (lang === "ms" ? w.textBm : w.textEn);
+const wInstruction = (w: Warning, lang: Lang) => (lang === "ms" ? w.instructionBm : w.instructionEn);
+
+/** "10:00 AM", or "Thu 10:00 AM" when it isn't today. `nowLocal` is the local "YYYY-MM-DDTHH:MM". */
+function wLabel(iso: string, p: Prefs, nowLocal: string): string {
+  const time = i18n.clock(iso, p.lang, p.clock);
+  return iso.slice(0, 10) === nowLocal.slice(0, 10) ? time : `${i18n.weekday(iso, p.lang, true)} ${time}`;
+}
+
+/** The short block at the top of a report. Null when nothing applies. */
+export function warningBlock(items: Warning[], p: Prefs, nowLocal: string): string | null {
+  if (!items.length) return null;
+  const lines = items.slice(0, 3).map((w) => `• <b>${esc(wTitle(w, p.lang))}</b> · ${t(p.lang, "warn_until", { t: wLabel(w.to!, p, nowLocal) })}`);
+  if (items.length > 3) lines.push(`• +${items.length - 3}`);
+  return [`⚠️ <b>${t(p.lang, "warn_block_title")}</b>`, ...lines, `<i>${t(p.lang, "warn_more")}</i>`].join("\n");
+}
+
+/** One warning in full, for a push message or the /warnings list. */
+export function warningMessage(w: Warning, state: State, p: Prefs, nowLocal: string, header = true): string {
+  const lang = p.lang;
+  const lines: string[] = [];
+  if (header) lines.push(`⚠️ <b>${t(lang, "warn_alert_title")}</b> · MetMalaysia`);
+  lines.push(`<b>${esc(wTitle(w, lang))}</b>`, `🕒 ${t(lang, "warn_valid", { a: wLabel(w.from!, p, nowLocal), b: wLabel(w.to!, p, nowLocal) })}`);
+  const seg = stateSegment(w, state, lang === "ms");
+  if (seg) lines.push(`📍 ${esc(seg)}`);
+  const body = clip(wText(w, lang), seg ? 380 : 560);
+  if (body && body !== seg) lines.push("", esc(body));
+  const ins = wInstruction(w, lang);
+  if (ins) lines.push("", `<i>${esc(clip(ins, 240))}</i>`);
+  lines.push("", `<i>${t(lang, "warn_source")}${lang === "zh" ? " " + t(lang, "warn_orig") : ""}</i>`);
+  return lines.join("\n");
+}
+
+/** The /warnings answer. `elsewhere` = warnings active in other states (mentioned in a single line). */
+export function warningsListMessage(items: Warning[], state: State, elsewhere: number, p: Prefs, nowLocal: string): string {
+  const lang = p.lang;
+  const stateLabel = esc(state);
+  const parts: string[] = [];
+  if (!items.length) parts.push(t(lang, "warn_none", { s: stateLabel }));
+  else {
+    items.slice(0, 3).forEach((w, i) => parts.push(warningMessage(w, state, p, nowLocal, i === 0)));
+    if (items.length > 3) parts.push(`+${items.length - 3}`);
+  }
+  if (elsewhere > 0) parts.push(`<i>${t(lang, "warn_elsewhere", { n: elsewhere })}</i>`);
+  return parts.join(`\n${DIVIDER}\n`);
+}

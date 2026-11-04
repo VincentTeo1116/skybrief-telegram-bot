@@ -46,8 +46,15 @@ export class Telegram {
     return body.result as T;
   }
 
-  sendMessage(chatId: number, text: string, replyMarkup?: Markup) {
-    return this.call("sendMessage", { chat_id: chatId, text, parse_mode: "HTML", reply_markup: replyMarkup });
+  /** `silent` delivers without a notification sound (used for warnings during quiet hours). */
+  sendMessage(chatId: number, text: string, replyMarkup?: Markup, opts: { silent?: boolean } = {}) {
+    return this.call("sendMessage", {
+      chat_id: chatId,
+      text,
+      parse_mode: "HTML",
+      reply_markup: replyMarkup,
+      ...(opts.silent ? { disable_notification: true } : {}),
+    });
   }
 
   editMessageText(chatId: number, messageId: number, text: string, replyMarkup?: Markup) {

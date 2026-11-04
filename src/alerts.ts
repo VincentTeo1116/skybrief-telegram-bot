@@ -4,15 +4,17 @@
  * Runs every 15 minutes (cron minute % 15 == 5, so it rarely coincides with common report times).
  * Rain detection uses HOURLY forecast data, so "soon" means the next 1-2 hours, not minutes.
  */
-import { alertCandidates, patchUser, placeOf, type UserPatch } from "./db";
-import { aqiAlertMessage, rainAlertMessage } from "./format";
+import { alertCandidates, patchUser, placeOf, warningCandidates, type UserPatch } from "./db";
+import { aqiAlertMessage, rainAlertMessage, warningMessage } from "./format";
 import { rainAlert } from "./insights";
 import { alertKeyboard } from "./keyboards";
 import { Telegram, TelegramError } from "./telegram";
 import type { Env, Report, User } from "./types";
 import { prefsOf } from "./units";
-import { localParts, minutesOf, normaliseTime } from "./util";
-import { makeWeather } from "./weather";
+import { haversineKm, localParts, minutesOf, normaliseTime } from "./util";
+import { count } from "./stats";
+import { canonicalState, coversArea, currentLandWarnings, mentionsState, nowMalaysia, stateOfPlace } from "./warnings";
+import { WeatherService, makeWeather } from "./weather";
 
 /** Each city costs ~3 outgoing requests; keep a pass inside the free plan's per-invocation cap. Others are served on the next pass. */
 export const ALERT_MAX_CITIES = 6;
@@ -67,11 +69,11 @@ export function decideAqi(u: User, r: Report, nowMs: number): { send: boolean; p
   return { send: false, patch: {} };
 }
 
-export async function runAlerts(env: Env, now = new Date()): Promise<{ cities: number; sent: number }> {
+export async function runAlerts(env: Env, now = new Date()): Promise<{ cities: number; sent: number; rain: number; aqi: number }> {
   const nowMs = now.getTime();
   const quiet = parseQuietHours(env.QUIET_HOURS);
   const users = (await alertCandidates(env.DB)).filter((u) => !inQuietHours(u.tz, now, quiet));
-  if (!users.length) return { cities: 0, sent: 0 };
+  if (!users.length) return { cities: 0, sent: 0, rain: 0, aqi: 0 };
 
   // Group by city so each city is fetched once; serve the longest-waiting cities first.
   const groups = new Map<string, User[]>();
@@ -85,6 +87,8 @@ export async function runAlerts(env: Env, now = new Date()): Promise<{ cities: n
   const tg = new Telegram(env);
   const wx = makeWeather(env);
   let sent = 0;
+  let rainSent = 0;
+  let aqiSent = 0;
 
   for (const group of ordered) {
     let report: Report;
@@ -106,11 +110,13 @@ export async function runAlerts(env: Env, now = new Date()): Promise<{ cities: n
           await tg.sendMessage(u.chatId, rainAlertMessage(mine, p, rain), alertKeyboard("rain", u.lang));
           patch.lastRainAlert = nowMs; // only after a successful send
           sent++;
+          rainSent++;
         }
         const aqi = decideAqi(u, mine, nowMs);
         if (aqi.send) {
           await tg.sendMessage(u.chatId, aqiAlertMessage(mine, p), alertKeyboard("aqi", u.lang));
           sent++;
+          aqiSent++;
         }
         Object.assign(patch, aqi.patch); // only after a successful send
       } catch (e) {
@@ -124,6 +130,104 @@ export async function runAlerts(env: Env, now = new Date()): Promise<{ cities: n
       await patchUser(env.DB, u.chatId, patch);
     }
   }
+  await count(env.DB, now, "rain", rainSent);
+  await count(env.DB, now, "aqi", aqiSent);
   console.log(JSON.stringify({ event: "alerts_done", cities: ordered.length, sent }));
-  return { cities: ordered.length, sent };
+  return { cities: ordered.length, sent, rain: rainSent, aqi: aqiSent };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Official MetMalaysia warnings
+// ---------------------------------------------------------------------------------------------
+
+/** Per pass: keep inside the free plan's outgoing-request cap (1 feed fetch + a few lookups + the messages). */
+export const MAX_WARNING_SENDS = 12;
+export const MAX_REGION_LOOKUPS = 3;
+export const MAX_WARNINGS_PER_USER = 2;
+const SEEN_MEMORY = 12;
+
+/**
+ * Work out (and store) which state a user is in. Free for names that already contain it ("Bukit Bintang, Kuala Lumpur",
+ * "George Town (Penang)"); otherwise one place search. Returns '' on a network problem so it is retried later,
+ * and '-' when it definitely can't be determined (not Malaysia, or not found).
+ */
+export async function resolveRegion(wx: WeatherService, db: D1Database, u: User): Promise<string> {
+  if (u.region !== "") return u.region;
+  const save = async (region: string) => {
+    await patchUser(db, u.chatId, { region });
+    return region;
+  };
+  if (!/malaysia|马来西亚/i.test(u.country)) return save("-");
+  const inName = canonicalState(u.placeName);
+  if (inName) return save(inName);
+  const queries = [...new Set([u.placeName, ...u.placeName.split(",").map((s) => s.trim()).reverse()])].filter((q) => q.length >= 2);
+  try {
+    for (const q of queries) {
+      for (const cand of await wx.searchPlaces(q, 5, "en")) {
+        const state = haversineKm(u.lat, u.lon, cand.lat, cand.lon) < 40 ? stateOfPlace(cand) : null;
+        if (state) return save(state);
+      }
+    }
+  } catch {
+    return ""; // try again next time
+  }
+  return save("-");
+}
+
+/**
+ * Tell people about NEW warnings for their state. Each warning is sent once (remembered per user), at most a couple
+ * per person per pass, and silently during quiet hours: a flood warning at 3am should still arrive, just without the sound.
+ */
+export async function runWarnings(env: Env, now = new Date()): Promise<{ users: number; sent: number }> {
+  const users = await warningCandidates(env.DB);
+  if (!users.length) return { users: 0, sent: 0 };
+  const wx = makeWeather(env);
+  let current;
+  try {
+    current = currentLandWarnings(await wx.warnings(true), now);
+  } catch (e) {
+    console.log(JSON.stringify({ event: "warnings_feed_failed", error: String(e).slice(0, 120) }));
+    return { users: users.length, sent: 0 };
+  }
+  if (!current.length) return { users: users.length, sent: 0 };
+
+  const tg = new Telegram(env);
+  const quiet = parseQuietHours(env.QUIET_HOURS);
+  const nowLocal = nowMalaysia(now);
+  let sent = 0;
+  let lookups = 0;
+
+  for (const u of users) {
+    if (sent >= MAX_WARNING_SENDS) break;
+    let region = u.region;
+    if (region === "") {
+      if (lookups >= MAX_REGION_LOOKUPS) continue;
+      lookups++;
+      region = await resolveRegion(wx, env.DB, u);
+    }
+    const state = canonicalState(region);
+    if (!state) continue;
+    const fresh = current
+      .filter((w) => mentionsState(w, state) && coversArea(w, state, u.district, u.placeName) && !u.warnSeen.includes(w.id))
+      .slice(0, MAX_WARNINGS_PER_USER);
+    if (!fresh.length) continue;
+
+    const p = prefsOf(u);
+    const silent = inQuietHours(u.tz, now, quiet);
+    const delivered: string[] = [];
+    try {
+      for (const w of fresh) {
+        await tg.sendMessage(u.chatId, warningMessage(w, state, p, nowLocal), alertKeyboard("warn", u.lang), { silent });
+        delivered.push(w.id);
+        sent++;
+      }
+    } catch (e) {
+      if (e instanceof TelegramError && e.unreachable) await patchUser(env.DB, u.chatId, { warningsOn: false });
+      else console.log(JSON.stringify({ event: "warning_send_failed", chatId: u.chatId, error: String(e).slice(0, 100) }));
+    }
+    if (delivered.length) await patchUser(env.DB, u.chatId, { warnSeen: [...u.warnSeen, ...delivered].slice(-SEEN_MEMORY) });
+  }
+  await count(env.DB, now, "warning", sent);
+  console.log(JSON.stringify({ event: "warnings_done", users: users.length, current: current.length, sent }));
+  return { users: users.length, sent };
 }

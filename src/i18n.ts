@@ -112,15 +112,15 @@ export const T: Record<string, Row> = {
       "⚙️ 点击<b>设置</b>可选择显示内容并切换语言。",
   ],
   help: [
-    "<b>Commands</b>\n/weather: current weather &amp; air quality\n/hourly: next 12 hours\n/tomorrow: tomorrow's forecast\n/week: 7-day outlook\n" +
+    "<b>Commands</b>\n/weather: current weather &amp; air quality\n/hourly: next 12 hours\n/tomorrow: tomorrow's forecast\n/week: 7-day outlook\n/warnings: official weather warnings\n" +
       "/city: change location (or just type a city name)\n/daily: morning report on or off\n" +
       "/settime 07:45: change the morning report time\n/evening [19:00]: evening report (tomorrow's outlook)\n" +
       "/settings: sections, language, units, alerts\n/help: this message\n\n📍 Share your GPS location with the bottom button to auto-detect where you are.\n💡 Type @SkyBrief_AI_bot and a city in any chat to share its weather.",
-    "<b>Arahan</b>\n/weather: cuaca &amp; kualiti udara semasa\n/hourly: 12 jam akan datang\n/tomorrow: ramalan esok\n/week: ramalan 7 hari\n" +
+    "<b>Arahan</b>\n/weather: cuaca &amp; kualiti udara semasa\n/hourly: 12 jam akan datang\n/tomorrow: ramalan esok\n/week: ramalan 7 hari\n/warnings: amaran cuaca rasmi\n" +
       "/city: tukar lokasi (atau taip nama bandar)\n/daily: hidup/matikan laporan pagi\n" +
       "/settime 07:45: tukar masa laporan pagi\n/evening [19:00]: laporan petang (ramalan esok)\n" +
       "/settings: bahagian, bahasa, unit, amaran\n/help: mesej ini\n\n📍 Kongsi lokasi GPS anda melalui butang di bawah untuk pengesanan automatik.\n💡 Taip @SkyBrief_AI_bot dan nama bandar dalam mana-mana sembang untuk berkongsi cuaca.",
-    "<b>命令</b>\n/weather：当前天气与空气质量\n/hourly：未来12小时\n/tomorrow：明天的预报\n/week：7天预报\n" +
+    "<b>命令</b>\n/weather：当前天气与空气质量\n/hourly：未来12小时\n/tomorrow：明天的预报\n/week：7天预报\n/warnings：官方天气警报\n" +
       "/city：更换位置（也可直接输入城市名）\n/daily：开启/关闭早间报告\n" +
       "/settime 07:45：修改早间报告时间\n/evening [19:00]：晚间报告（明天的预报）\n" +
       "/settings：内容、语言、单位、提醒\n/help：显示此帮助\n\n📍 点击底部按钮分享 GPS 位置，可自动定位。\n💡 在任意聊天中输入 @SkyBrief_AI_bot 加城市名，即可分享天气。",
@@ -303,9 +303,9 @@ export const T: Record<string, Row> = {
     "📐 <b>单位与显示</b>\n\n选择数字和时间的显示方式。简洁模式会让报告短得多。",
   ],
   settings_alerts: [
-    "🔔 <b>Alerts &amp; reports</b>\n\n🌧 Rain alerts: a heads-up when rain is likely within the next 1–2 hours.\n😷 AQI alert: a message when air quality reaches the level you pick (101 = unhealthy for sensitive groups, 151 = unhealthy, 201 = very unhealthy).\n🌙 Evening report: tomorrow's outlook every evening (change the time with /evening 19:00).\n\nAlerts are paused overnight (22:00–06:30 by default, your local time).",
-    "🔔 <b>Amaran &amp; laporan</b>\n\n🌧 Amaran hujan: pemberitahuan apabila hujan berkemungkinan dalam 1–2 jam akan datang.\n😷 Amaran AQI: mesej apabila kualiti udara mencapai tahap pilihan anda (101 = tidak sihat untuk golongan sensitif, 151 = tidak sihat, 201 = sangat tidak sihat).\n🌙 Laporan petang: ramalan esok setiap petang (tukar masa dengan /evening 19:00).\n\nAmaran dihentikan pada waktu malam (lalai 22:00–06:30, waktu tempatan anda).",
-    "🔔 <b>提醒与报告</b>\n\n🌧 降雨提醒：未来1–2小时可能下雨时通知您。\n😷 AQI 提醒：空气质量达到您选择的级别时通知（101 = 对敏感人群不健康，151 = 不健康，201 = 非常不健康）。\n🌙 晚间报告：每晚发送明天的预报（用 /evening 19:00 修改时间）。\n\n提醒在夜间暂停（默认当地时间 22:00–06:30）。",
+    "🔔 <b>Alerts &amp; reports</b>\n\n🌧 Rain alerts: a heads-up when rain is likely within the next 1–2 hours.\n😷 AQI alert: a message when air quality reaches the level you pick (101 = unhealthy for sensitive groups, 151 = unhealthy, 201 = very unhealthy).\n⚠️ Official warnings: MetMalaysia thunderstorm, heavy-rain and hot-weather warnings for your state (Malaysia only; sent right away, silently at night).\n🌙 Evening report: tomorrow's outlook every evening (change the time with /evening 19:00).\n\nAlerts are paused overnight (22:00–06:30 by default, your local time).",
+    "🔔 <b>Amaran &amp; laporan</b>\n\n🌧 Amaran hujan: pemberitahuan apabila hujan berkemungkinan dalam 1–2 jam akan datang.\n😷 Amaran AQI: mesej apabila kualiti udara mencapai tahap pilihan anda (101 = tidak sihat untuk golongan sensitif, 151 = tidak sihat, 201 = sangat tidak sihat).\n⚠️ Amaran rasmi: amaran ribut petir, hujan lebat dan cuaca panas MetMalaysia untuk negeri anda (Malaysia sahaja; dihantar serta-merta, senyap pada waktu malam).\n🌙 Laporan petang: ramalan esok setiap petang (tukar masa dengan /evening 19:00).\n\nAmaran dihentikan pada waktu malam (lalai 22:00–06:30, waktu tempatan anda).",
+    "🔔 <b>提醒与报告</b>\n\n🌧 降雨提醒：未来1–2小时可能下雨时通知您。\n😷 AQI 提醒：空气质量达到您选择的级别时通知（101 = 对敏感人群不健康，151 = 不健康，201 = 非常不健康）。\n⚠️ 官方警报：马来西亚气象局针对您所在州属的雷暴、大雨和炎热天气警报（仅限马来西亚；即时发送，夜间静音）。\n🌙 晚间报告：每晚发送明天的预报（用 /evening 19:00 修改时间）。\n\n提醒在夜间暂停（默认当地时间 22:00–06:30）。",
   ],
   m_sections: ["📋 Report sections", "📋 Bahagian laporan", "📋 报告内容"],
   m_lang: ["🌐 Language", "🌐 Bahasa", "🌐 语言"],
@@ -361,6 +361,45 @@ export const T: Record<string, Row> = {
     "Taip nama bandar selepas nama bot, cth. Ipoh",
     "请在机器人名称后输入城市名，例如：怡保",
   ],
+  // ---- v2.2: official warnings (MetMalaysia)
+  warn_block_title: ["Official warnings", "Amaran rasmi", "官方警报"],
+  warn_until: ["until {t}", "sehingga {t}", "至 {t}"],
+  warn_more: ["/warnings for details", "/warnings untuk butiran", "发送 /warnings 查看详情"],
+  warn_alert_title: ["Official warning", "Amaran rasmi", "官方警报"],
+  warn_valid: ["Valid {a} – {b}", "Sah {a} – {b}", "有效期 {a} – {b}"],
+  warn_source: [
+    "Source: Malaysian Meteorological Department (MetMalaysia)",
+    "Sumber: Jabatan Meteorologi Malaysia (MetMalaysia)",
+    "来源：马来西亚气象局（MetMalaysia）",
+  ],
+  warn_orig: ["Original text", "Teks asal", "（官方原文为英文）"],
+  warn_none: [
+    "✅ No active official warnings for {s}.",
+    "✅ Tiada amaran rasmi yang aktif untuk {s}.",
+    "✅ {s} 目前没有生效的官方警报。",
+  ],
+  warn_elsewhere: [
+    "{n} warning(s) are active in other states.",
+    "{n} amaran aktif di negeri lain.",
+    "其他州属有 {n} 项生效警报。",
+  ],
+  warn_not_my: [
+    "Official warnings are available for Malaysia only.",
+    "Amaran rasmi hanya tersedia untuk Malaysia.",
+    "官方警报仅适用于马来西亚。",
+  ],
+  warn_no_region: [
+    "I couldn't work out which state you're in. Pick your city again with /city.",
+    "Saya tidak dapat mengenal pasti negeri anda. Pilih bandar anda semula dengan /city.",
+    "无法确定您所在的州属，请用 /city 重新选择城市。",
+  ],
+  warn_feed_down: [
+    "⚠️ I couldn't reach the MetMalaysia warnings service. Please try again shortly.",
+    "⚠️ Tidak dapat menghubungi perkhidmatan amaran MetMalaysia. Sila cuba sebentar lagi.",
+    "⚠️ 无法连接马来西亚气象局警报服务，请稍后再试。",
+  ],
+  a_warn_on: ["✅ ⚠️ Official warnings: ON", "✅ ⚠️ Amaran rasmi: HIDUP", "✅ ⚠️ 官方警报：开"],
+  a_warn_off: ["⬜ ⚠️ Official warnings: OFF", "⬜ ⚠️ Amaran rasmi: MATI", "⬜ ⚠️ 官方警报：关"],
   // ---- bot command menu
   cmd_weather: ["Current weather & air quality", "Cuaca & kualiti udara semasa", "当前天气与空气质量"],
   cmd_hourly: ["Next 12 hours", "12 jam akan datang", "未来12小时"],
@@ -371,6 +410,7 @@ export const T: Record<string, Row> = {
   cmd_tomorrow: ["Tomorrow's forecast", "Ramalan esok", "明天的预报"],
   cmd_week: ["7-day outlook", "Ramalan 7 hari", "7天预报"],
   cmd_evening: ["Evening report on/off or time", "Laporan petang hidup/mati atau masa", "晚间报告开关或时间"],
+  cmd_warnings: ["Official weather warnings", "Amaran cuaca rasmi", "官方天气警报"],
   cmd_help: ["Show help", "Tunjuk bantuan", "查看帮助"],
 };
 

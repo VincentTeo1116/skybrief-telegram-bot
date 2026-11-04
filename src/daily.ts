@@ -5,6 +5,7 @@
  */
 import { claimDaily, dailyCandidates, patchUser, type Slot } from "./db";
 import { t } from "./i18n";
+import { count } from "./stats";
 import { Telegram, TelegramError } from "./telegram";
 import type { Env, User } from "./types";
 import { localParts, minutesOf } from "./util";
@@ -74,15 +75,16 @@ export function dueItems(users: User[], now: Date): DueItem[] {
   return items.sort((a, b) => a.late - b.late).slice(0, MAX_PER_TICK);
 }
 
-export async function runDaily(env: Env, now = new Date()): Promise<{ due: number; sent: number; failed: number }> {
+export async function runDaily(env: Env, now = new Date()): Promise<{ due: number; sent: number; failed: number; morning: number; evening: number }> {
   const due = dueItems(await dailyCandidates(env.DB), now);
-  if (!due.length) return { due: 0, sent: 0, failed: 0 };
+  if (!due.length) return { due: 0, sent: 0, failed: 0, morning: 0, evening: 0 };
 
   const tg = new Telegram(env);
   const wx = makeWeather(env);
   const refreshed = new Set<string>(); // first user per city gets fresh data; the rest reuse it
   let sent = 0;
   let failed = 0;
+  const bySlot = { morning: 0, evening: 0 };
 
   for (const { user: u, slot } of due) {
     const cfg = SLOTS[slot];
@@ -97,6 +99,7 @@ export async function runDaily(env: Env, now = new Date()): Promise<{ due: numbe
       refreshed.add(cityKey);
       await tg.sendMessage(u.chatId, text, markup);
       sent++;
+      bySlot[slot]++;
     } catch (e) {
       failed++;
       if (e instanceof TelegramError && e.unreachable) {
@@ -109,6 +112,9 @@ export async function runDaily(env: Env, now = new Date()): Promise<{ due: numbe
       }
     }
   }
+  await count(env.DB, now, "morning", bySlot.morning);
+  await count(env.DB, now, "evening", bySlot.evening);
+  await count(env.DB, now, "failed", failed);
   console.log(JSON.stringify({ event: "daily_done", due: due.length, sent, failed }));
-  return { due: due.length, sent, failed };
+  return { due: due.length, sent, failed, ...bySlot };
 }

@@ -20,6 +20,8 @@ Every user has their own saved location, language, units, layout, alerts and rep
 | ⚙️ **Settings** | Show or hide any of 7 report sections; **English** (default), **Bahasa Melayu**, **中文**. |
 | 💬 **Inline mode** | Type `@SkyBrief_AI_bot Ipoh` in any chat to share a weather card. |
 | 🛟 **Backup data source** | If Open-Meteo is down, reports automatically come from MET Norway (and say so). |
+| ⚠️ **Official warnings** | MetMalaysia thunderstorm, heavy-rain and hot-weather warnings for **your state and district**: shown at the top of your report and pushed once when issued (silently at night). `/warnings` shows what is active. Malaysia only. |
+| 🛠 **Admin tools** | `/status` health dashboard, `/broadcast` to message everyone (preview + confirm), and automatic alerts to admins when a weather source or the warnings feed keeps failing. |
 | 👥 **Multi-user** | Settings are stored per person. Access modes `approval` / `open` / `closed`; admin commands `/users`, `/allow`, `/block`. |
 
 **Each report includes:** temperature, feels-like, high/low, yesterday comparison, humidity, wind, cloud, pressure, sunrise/sunset, UV, **AQI with PM2.5/PM10 and an outlook**, a 6-hour rain outlook, the best time outside, a 3-day forecast and practical tips (umbrella, sunscreen, mask…).
@@ -27,6 +29,7 @@ Every user has their own saved location, language, units, layout, alerts and rep
 ## Data sources and accuracy
 
 * **Weather:** [Open-Meteo](https://open-meteo.com): model-based; "current" values refresh about every 15 minutes. Each report shows the observation time and source.
+* **Official warnings:** the Malaysian Meteorological Department's open data (`api.data.gov.my/weather/warning/`). The feed is free text naming states and districts, with **no coordinates**, so matching is by the state saved with your location. When a warning lists specific districts and your district is known and not listed, it is skipped (e.g. a storm warning for Selangor's *Sabak Bernam* is not sent to Shah Alam). When the district is unknown the warning is shown: a missed flood warning is worse than an extra message. **Sea warnings are never shown to people on land.** MetMalaysia publishes English and Malay only; Chinese users get the English text.
 * **Backup weather:** [MET Norway](https://api.met.no/) is used automatically when Open-Meteo can't be reached, only for places whose timezone is already known. It has no rain *probability*, so that is estimated from the forecast rainfall (the footer says "backup source"), and it has no "yesterday", so the comparison line is omitted. It is never used when *saving* a new location.
 * **Air quality:** with a free [WAQI token](https://aqicn.org/data-platform/token/) the bot uses **real measured AQI from the nearest monitoring station** (within 40 km, under 3 hours old) and names the station. Otherwise it uses Open-Meteo's modelled estimate and says so. The AQI **outlook** and the best-time hint always come from the model (labelled "model").
 * **Rain alerts use hourly forecast data.** Outside Europe and North America, finer-grained data is only interpolated from hourly values, so "soon" means *within the next 1–2 hours*, not minutes.
@@ -42,8 +45,9 @@ Telegram ──webhook──▶ Cloudflare Worker ──▶ D1 (users, settings)
  (messages, taps,        │   ▲
   inline queries)        │   └── Open-Meteo ─(down?)→ MET Norway · WAQI · Nominatim
                          │
-  Cron trigger (every    │   every minute  → morning / evening reports that are due
-  minute) ───────────────┘   every 15 min  → rain and air-quality alerts
+  Cron trigger (every    │   every minute  → morning / evening reports that are due, then broadcast batches
+  minute) ───────────────┘   every 5 min   → health probe (alerts the admin)
+                             every 15 min  → rain / air-quality alerts, and official warnings (offset minutes)
 ```
 
 * Telegram calls `POST /webhook` (protected by a secret header). The Worker acknowledges instantly and processes in the background.
@@ -60,6 +64,19 @@ Telegram ──webhook──▶ Cloudflare Worker ──▶ D1 (users, settings)
 | **Mute** | 🔕 button on the alert itself | 🔕 button on the alert itself |
 
 Alerts are **off for everyone by default**.
+
+## Official warnings in detail
+
+* **Where you see them:** at the top of *Today's* report, and as a message when a **new** warning is issued for your area (each warning is sent once; an updated warning counts as new). Pushes are **silent during quiet hours** so a night-time warning never wakes anyone but is there in the morning.
+* **Who gets them:** everyone in Malaysia, **on by default**; switch off under ⚙️ Settings → Alerts, or with the 🔕 button on a warning. People you approve with `/allow` start receiving them after their first `/start`.
+* **Your state** is saved with your location (city shortcuts, search results and GPS all provide it). If an older saved location has none, the bot works it out once on its own.
+* If the MetMalaysia service is briefly unreachable, a copy up to 30 minutes old is used; the admin is alerted if it stays down for 30 minutes.
+
+## Admin tools in detail
+
+* **`/status`** is the one-screen dashboard: is the cron running (it should tick every minute), how many users, how many reports and alerts went out today, whether Open-Meteo / the backup / the warnings feed are healthy, and the last broadcast.
+* **Automatic alerts to every admin**, once per problem and once on recovery, so there is no noise: Open-Meteo failing for 15 minutes (reports are using the backup); the backup failing as well (**critical**: nothing works); the warnings feed down for 30 minutes.
+* **`/broadcast`** sends plain text (any `<` or `&` is escaped), up to 1,000 characters, **in batches of 20 per minute** so it works within the free plan's limits. You are told when it finishes and how many could not be reached (people who blocked the bot). Only one broadcast runs at a time.
 
 ## Access control (multi-user)
 
@@ -78,6 +95,8 @@ Admins are the Telegram IDs in `ADMIN_IDS` (comma-separated). They are always ac
 | `/users` | List users with status, city, language, daily/evening times and alert flags |
 | `/allow 123456789` | Approve a user by Telegram ID (they are notified) |
 | `/block 123456789` | Block a user. They get no replies |
+| `/status` | Cron heartbeat, user counts, today's counters, health of Open-Meteo / the backup / the warnings feed, last broadcast |
+| `/broadcast your message` | Send a message to every active user. You get a **preview with Send / Cancel**; nothing goes out until you confirm. `/broadcast stop` cancels a running one |
 
 Users can find their ID by messaging [@userinfobot](https://t.me/userinfobot). Inline mode follows the same rules: unapproved people only get a button into the bot.
 
@@ -90,6 +109,7 @@ Users can find their ID by messaging [@userinfobot](https://t.me/userinfobot). I
 | `/hourly` | Next 12 hours with rain-chance bars |
 | `/tomorrow` | Tomorrow's forecast |
 | `/week` | 7-day outlook |
+| `/warnings` | Official MetMalaysia warnings active for your state |
 | `/city` | Change location (or just type a city name) |
 | `/daily` | Turn the morning report on or off |
 | `/settime 07:45` | Change the morning report time (24h, in your city's timezone) |
@@ -173,7 +193,7 @@ npm run test:live         # checks against the REAL weather services (needs inte
 ```
 
 * `test:integration` runs the real Worker in Cloudflare's runtime with a local database, a mock Telegram and a **controllable mock of every weather service**, then plays a full multi-user scenario: approval, all four views, every settings page, units, languages, GPS, rain and AQI alerts, outages and the backup source, inline mode, and morning + evening reports delivered across two timezones.
-* `test:live` compares the backup source and the sunrise/sunset maths against Open-Meteo in nine cities (including half-hour and date-line timezones) and renders every view from real data.
+* `test:live` compares the backup source and the sunrise/sunset maths against Open-Meteo in nine cities (including half-hour and date-line timezones), renders every view from real data, and parses the real MetMalaysia feed.
 
 To chat with the bot from your computer: copy `.dev.vars.example` to `.dev.vars`, fill it in, run `npm run db:migrate:local` and `npm run dev`, then expose the local port with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8787`) and call `/setup` against the tunnel URL. For normal use, deploying is simpler.
 
@@ -182,6 +202,7 @@ To chat with the bot from your computer: copy `.dev.vars.example` to `.dev.vars`
 * **Free plan:** check Cloudflare's current Workers and D1 limits. The code is built to stay small: the cron handles at most **8 reports per minute** and **6 cities per alert pass** (anyone left over is served on the following minutes), to respect the per-invocation request cap; and CPU-heavy work is kept to about a millisecond (a regression test guards this). Larger groups need the paid Workers plan.
 * **Cron every minute** uses about 1,440 invocations a day.
 * Inline mode answers with up to 3 cities per query.
+* **Warnings pass:** at most 12 messages and 3 state look-ups per 15-minute pass; **broadcast:** 20 recipients per minute.
 * One Worker serves one Telegram bot. Rotating the bot token means updating the `TELEGRAM_BOT_TOKEN` secret and opening `/setup` again.
 * The previous Python implementation is preserved in git history (tag `python-final`).
 
@@ -196,6 +217,8 @@ To chat with the bot from your computer: copy `.dev.vars.example` to `.dev.vars`
 | Daily report missing | `/settings` → Alerts & reports, or `/daily`, should show 🔔 ON; check the user's city timezone. `npx wrangler tail` shows `daily_done` lines each run |
 | No alerts arriving | They are off by default; turn them on in Settings. They also pause 22:00–06:30 (`QUIET_HOURS`) and have a 3-hour cooldown |
 | Inline mode shows nothing | Run `/setinline` in @BotFather, and open `/setup` again after deploying |
+| No official warnings arrive | Is the person in Malaysia, with warnings ON (Settings → Alerts)? `/warnings` shows what is active for their state. A warning that lists only other districts of their state is skipped on purpose. `npx wrangler tail` shows `warnings_done` lines |
+| `/status` says the cron stalled | The Worker's cron trigger stopped: check the Workers dashboard and redeploy |
 | AQI says "modelled estimate" | No `WAQI_TOKEN`, or no fresh station within 40 km |
 | Footer says "backup source" | Open-Meteo was unreachable; it switches back by itself |
 
@@ -216,8 +239,12 @@ src/
   keyboards.ts   bottom bar, view navigation, settings pages
   presets.ts     one-tap city list (edit me)
   db.ts          D1 access
+  warnings.ts    MetMalaysia feed: parsing, sea-warning exclusion, state + district matching
+  health.ts      health probes and the alert-once state machine
+  broadcast.ts   admin broadcast (preview, confirm, batched delivery)
+  stats.ts       counters, cron heartbeat and the /status page
   telegram.ts    Bot API client
-migrations/      D1 schema (0001 users, 0002 preferences + alerts)
+migrations/      D1 schema (0001 users, 0002 preferences + alerts, 0003 warnings + admin store)
 test/            unit tests + a recorded real MET Norway response
 scripts/         end-to-end test, mock weather services, live checks
 wrangler.jsonc   Worker configuration

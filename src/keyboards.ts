@@ -103,6 +103,7 @@ export function settingsView(u: User, page: SettingsPage): { text: string; marku
             AQI_ALERT_LEVELS.map((n) =>
               btn(mark(u.aqiAlert === n, n === 0 ? t(lang, "a_aqi_off") : t(lang, "a_aqi_at", { n })), `al:aqi:${n}`),
             ),
+            [btn(t(lang, u.warningsOn ? "a_warn_on" : "a_warn_off"), "al:warn")],
             [btn(u.eveningOn ? t(lang, "a_eve_on", { time: u.eveningTime }) : t(lang, "a_eve_off"), "al:eve")],
             back("set"),
           ],
@@ -141,6 +142,11 @@ export function approvalKeyboard(chatId: number): Markup {
 }
 
 /** Buttons under a proactive alert: mute that kind of alert, or open the full report. */
-export function alertKeyboard(kind: "rain" | "aqi", lang: Lang): Markup {
+export function alertKeyboard(kind: "rain" | "aqi" | "warn", lang: Lang): Markup {
   return { inline_keyboard: [[btn(t(lang, "b_mute"), `mute:${kind}`)], [btn(t(lang, "b_report"), "v:now")]] };
+}
+
+/** Confirm / cancel under a broadcast preview (admin only). */
+export function broadcastKeyboard(): Markup {
+  return { inline_keyboard: [[btn("✅ Send now", "bc:ok"), btn("❌ Cancel", "bc:no")]] };
 }

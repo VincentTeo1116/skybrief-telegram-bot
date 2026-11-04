@@ -21,8 +21,57 @@ export const state = {
   stationAqi: null, // measured AQI (null = no WAQI station answer)
   todayMax: 33.1,
   yesterdayMax: 30.5,
+  // MetMalaysia warnings
+  warnOn: false, // is a land (thunderstorm) warning active?
+  warnDown: false,
+  warnVersion: 0, // bump to "re-issue" the warning (new issue time = new id)
+  warnAreas: "Perak (Kampar, Kinta) • Selangor (Sabak Bernam) • Kuala Lumpur",
 };
-export const counts = { forecast: 0, air: 0, geo: 0, reverse: 0, waqi: 0, metno: 0 };
+export const counts = { forecast: 0, air: 0, geo: 0, reverse: 0, waqi: 0, metno: 0, warnings: 0 };
+
+const klStamp = (offsetMin) => new Date(Date.now() + 8 * 3_600_000 + offsetMin * 60_000).toISOString().slice(0, 19);
+
+/** Same shape as https://api.data.gov.my/weather/warning/ : a sea warning (must be ignored), optionally a land warning, and "No Advisory". */
+function warningsFeed() {
+  const items = [
+    {
+      warning_issue: { issued: klStamp(-45), title_bm: "Amaran Angin Kencang dan Laut Bergelora", title_en: "Strong Winds and Rough Seas Warning" },
+      valid_from: klStamp(-60),
+      valid_to: klStamp(240),
+      heading_en: "Warning on Strong Wind and Rough Seas",
+      text_en: "SECTION A: FOR MALAYSIAN WATERS [WITHIN 24 NAUTICAL MILES] 1) THUNDERSTORMS WARNING Thunderstorms, heavy rain and strong winds are expected over the waters of Penang • Perak • Selangor until later today.",
+      instruction_en: "This condition of strong winds and rough seas is dangerous.",
+      heading_bm: "Amaran Angin kencang dan laut bergelora",
+      text_bm: "SEKSYEN A: UNTUK PERAIRAN MALAYSIA 1) AMARAN RIBUT PETIR Ribut petir dijangka di perairan Pulau Pinang • Perak • Selangor.",
+      instruction_bm: "Keadaan ini berbahaya.",
+    },
+  ];
+  if (state.warnOn) {
+    items.push({
+      warning_issue: { issued: klStamp(-30 - state.warnVersion), title_bm: "Amaran Ribut Petir", title_en: "Thunderstorms Warning" },
+      valid_from: klStamp(-60),
+      valid_to: klStamp(180),
+      heading_en: "THUNDERSTORMS WARNING",
+      text_en: `Thunderstorms, heavy rain and strong winds are expected over the states of ${state.warnAreas} until later today.`,
+      instruction_en: "Stay away from open areas and tall trees.",
+      heading_bm: "AMARAN RIBUT PETIR",
+      text_bm: `Ribut petir, hujan lebat dan angin kencang dijangka di negeri ${state.warnAreas} sehingga petang ini.`,
+      instruction_bm: "Jauhi kawasan terbuka.",
+    });
+  }
+  items.push({
+    warning_issue: { issued: klStamp(-200), title_bm: "Tiada Nasihat", title_en: "No Advisory" },
+    valid_from: null,
+    valid_to: null,
+    heading_en: "No Advisory",
+    text_en: "No Tropical Cyclone system is observed under MMD monitoring region",
+    instruction_en: null,
+    heading_bm: "Tiada Nasihat",
+    text_bm: "Tiada sistem Siklon Tropika dicerap",
+    instruction_bm: null,
+  });
+  return items;
+}
 
 const sinDay = (h) => Math.max(0, Math.sin((Math.PI * (h - 6)) / 12));
 const offsetFor = (lon) => (lon >= 130 ? 9 : 8);
@@ -103,7 +152,7 @@ function metno() {
 }
 
 const GEO = {
-  ipoh: { name: "Ipoh", latitude: 4.5975, longitude: 101.0901, country: "Malaysia", country_code: "MY", admin1: "Perak", timezone: "Asia/Kuala_Lumpur" },
+  ipoh: { name: "Ipoh", latitude: 4.5975, longitude: 101.0901, country: "Malaysia", country_code: "MY", admin1: "Perak", admin2: "Kinta", timezone: "Asia/Kuala_Lumpur" },
   tokyo: { name: "Tokyo", latitude: 35.6762, longitude: 139.6503, country: "Japan", country_code: "JP", admin1: "Tokyo", timezone: "Asia/Tokyo" },
   penang: { name: "George Town", latitude: 5.4141, longitude: 100.3288, country: "Malaysia", country_code: "MY", admin1: "Penang", timezone: "Asia/Kuala_Lumpur" },
 };
@@ -160,6 +209,10 @@ export function startMockWeather(port) {
         status: "ok",
         data: { aqi: state.stationAqi, city: { name: "Cheras, Kuala Lumpur", geo: [Number(glat) + 0.02, Number(glon)] }, time: { iso: new Date().toISOString() }, dominentpol: "pm25" },
       });
+    }
+    if (url.pathname === "/warnings") {
+      counts.warnings++;
+      return state.warnDown ? send({ error: true }, 503) : send(warningsFeed());
     }
     if (url.pathname === "/metno") {
       counts.metno++;

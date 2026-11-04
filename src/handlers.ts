@@ -10,6 +10,11 @@ import type { Env, Lang, Place, Status, TgCallback, TgInlineQuery, TgMessage, Tg
 import { AQI_ALERT_LEVELS, CLOCK_MODES, TEMP_UNITS, WIND_UNITS, defaultPrefs, prefsOf } from "./units";
 import { escapeHtml as esc, haversineKm, normaliseTime, parseIdList } from "./util";
 import { buildView } from "./views";
+import { resolveRegion } from "./alerts";
+import { dropDraft, MAX_TEXT, activeJob, broadcastBody, saveDraft, startBroadcast, stopBroadcast } from "./broadcast";
+import { statusMessage } from "./stats";
+import { canonicalState, coversArea, currentLandWarnings, mentionsState, nowMalaysia } from "./warnings";
+import { warningsListMessage } from "./format";
 import { WeatherError, WeatherService, makeWeather, placeLabel } from "./weather";
 
 interface Ctx {
@@ -21,11 +26,13 @@ interface Ctx {
 export const isAdmin = (env: Env, id: number) => parseIdList(env.ADMIN_IDS).includes(id);
 
 // ------------------------------------------------------------- bot commands
-const USER_COMMANDS = ["weather", "hourly", "tomorrow", "week", "city", "daily", "settime", "evening", "settings", "help"] as const;
+const USER_COMMANDS = ["weather", "hourly", "tomorrow", "week", "warnings", "city", "daily", "settime", "evening", "settings", "help"] as const;
 const ADMIN_COMMANDS: BotCommand[] = [
   { command: "users", description: "Admin: list users" },
   { command: "allow", description: "Admin: allow a user, /allow 123456" },
   { command: "block", description: "Admin: block a user, /block 123456" },
+  { command: "status", description: "Admin: health, counters, cron" },
+  { command: "broadcast", description: "Admin: message every user, /broadcast text" },
 ];
 
 export function botCommands(lang: Lang, admin = false): BotCommand[] {
@@ -144,6 +151,7 @@ async function onCommand(c: Ctx, user: User, text: string, from: TgUser): Promis
           firstName: from.first_name,
           username: from.username ?? "",
           dailyOn: true,
+          warningsOn: true,
           lastSent: lastSentAfterChange(user.tz, user.dailyTime),
         });
       }
@@ -165,6 +173,8 @@ async function onCommand(c: Ctx, user: User, text: string, from: TgUser): Promis
       return sendReport(c, user, "tomorrow");
     case "week":
       return sendReport(c, user, "week");
+    case "warnings":
+      return sendWarnings(c, user);
     case "city":
       return sendCityMenu(c, user);
     case "settings":
@@ -198,8 +208,10 @@ async function onCommand(c: Ctx, user: User, text: string, from: TgUser): Promis
     case "users":
     case "allow":
     case "block":
+    case "status":
+    case "broadcast":
       if (!admin) return void (await help());
-      return onAdminCommand(c, user, cmd, args);
+      return onAdminCommand(c, user, cmd, args, text.slice(head.length).trim());
     default:
       return void (await help());
   }
@@ -311,6 +323,7 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
   const data = q.data ?? "";
   if (!msg || msg.chat.type !== "private") return void (await quiet(c.tg.answerCallback(q.id)));
   if (data.startsWith("adm:")) return onAdminCallback(c, q, data);
+  if (data.startsWith("bc:")) return onBroadcastCallback(c, q, data);
 
   const user = await gate(c, q.from, msg.chat.id);
   if (!user) return void (await quiet(c.tg.answerCallback(q.id)));
@@ -358,7 +371,7 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
       if (newLang === lang) return void (await ack()); // already selected: nothing to redo
       let u = await patchUser(c.env.DB, chatId, { lang: newLang });
       const np = await localisedPlace(c, u, newLang);
-      if (np.name !== u.placeName || np.country !== u.country) u = await setLocation(c.env.DB, chatId, np);
+      if (np.name !== u.placeName || np.country !== u.country) u = await patchUser(c.env.DB, chatId, { placeName: np.name, country: np.country }); // rename only: keeps the saved state
       await showPage(u, "lang");
       // The bottom keyboard and command menu can only be replaced by sending a message.
       await c.tg.sendMessage(chatId, t(newLang, "lang_changed"), kb.mainReplyKeyboard(newLang));
@@ -377,6 +390,8 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
       if (kind === "rain") patch = { rainAlerts: !user.rainAlerts, lastRainAlert: 0 };
       else if (kind === "aqi" && (AQI_ALERT_LEVELS as readonly number[]).includes(Number(val))) {
         patch = { aqiAlert: Number(val), aqiAlertActive: false, lastAqiAlert: 0 };
+      } else if (kind === "warn") {
+        patch = { warningsOn: !user.warningsOn };
       } else if (kind === "eve") {
         const on = !user.eveningOn;
         patch = { eveningOn: on, ...(on ? { lastEvening: lastSentAfterChange(user.tz, user.eveningTime) } : {}) };
@@ -384,7 +399,7 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
       await showPage(Object.keys(patch).length ? await patchUser(c.env.DB, chatId, patch) : user, "alerts");
     } else if (data.startsWith("mute:")) {
       const kind = data.slice(5);
-      const patch: UserPatch = kind === "rain" ? { rainAlerts: false } : kind === "aqi" ? { aqiAlert: 0, aqiAlertActive: false } : {};
+      const patch: UserPatch = kind === "rain" ? { rainAlerts: false } : kind === "aqi" ? { aqiAlert: 0, aqiAlertActive: false } : kind === "warn" ? { warningsOn: false } : {};
       if (Object.keys(patch).length) await patchUser(c.env.DB, chatId, patch);
       await quiet(c.tg.editReplyMarkup(chatId, msg.message_id, { inline_keyboard: [[{ text: t(lang, "b_report"), callback_data: "v:now" }]] }));
       await ack(t(lang, "toast_muted"));
@@ -472,8 +487,22 @@ async function onInline(c: Ctx, q: TgInlineQuery): Promise<void> {
 }
 
 // -------------------------------------------------------------------- admin
-async function onAdminCommand(c: Ctx, admin: User, cmd: string, args: string[]): Promise<void> {
-  const reply = (text: string) => c.tg.sendMessage(admin.chatId, text);
+async function onAdminCommand(c: Ctx, admin: User, cmd: string, args: string[], rest: string): Promise<void> {
+  const reply = (text: string, markup?: Markup) => c.tg.sendMessage(admin.chatId, text, markup);
+
+  if (cmd === "status") return void (await reply(await statusMessage(c.env)));
+
+  if (cmd === "broadcast") {
+    if (rest.toLowerCase() === "stop") {
+      return void (await reply((await stopBroadcast(c.env)) ? "🛑 Broadcast stopped." : "No broadcast is running."));
+    }
+    if (!rest) return void (await reply("Usage: <code>/broadcast your message</code>\nYou get a preview and must confirm before anything is sent. <code>/broadcast stop</code> cancels a running one."));
+    if (rest.length > MAX_TEXT) return void (await reply(`That message is ${rest.length} characters; the limit is ${MAX_TEXT}.`));
+    const job = await activeJob(c.env);
+    if (job) return void (await reply(`A broadcast is already running (${job.sent + job.failed} of ${job.total} handled). <code>/broadcast stop</code> cancels it.`));
+    const { total } = await saveDraft(c.env, admin.chatId, rest);
+    return void (await reply(`📢 <b>Broadcast preview</b>: this is exactly what everyone will receive:\n${"┈".repeat(16)}\n${broadcastBody(rest)}\n${"┈".repeat(16)}\nSend to <b>${total}</b> active user(s)?`, kb.broadcastKeyboard()));
+  }
 
   if (cmd === "users") {
     const users = await listUsers(c.env.DB, 60);
@@ -506,7 +535,7 @@ async function onAdminCommand(c: Ctx, admin: User, cmd: string, args: string[]):
     await insertUser(c.env.DB, { chatId: id, firstName: "", username: "", status, place: DEFAULT_PLACE, dailyTime: normaliseTime(c.env.DEFAULT_DAILY_TIME ?? "") ?? "08:30" });
     // Someone who has never pressed /start can't be messaged yet (Telegram answers 403): start with reports off.
     // Their first /start records who they are and switches the daily report on.
-    await patchUser(c.env.DB, id, { dailyOn: false });
+    await patchUser(c.env.DB, id, { dailyOn: false, warningsOn: false }); // both are switched on by their first /start
   }
   if (cmd === "allow") {
     await quiet(c.tg.sendMessage(id, t(existing?.lang ?? "en", "acc_approved")));
@@ -537,4 +566,44 @@ async function onAdminCallback(c: Ctx, q: TgCallback, data: string): Promise<voi
     await quiet(c.tg.answerCallback(q.id, "Denied ⛔"));
     await quiet(c.tg.editMessageText(msg.chat.id, msg.message_id, `⛔ Denied: ${label}`));
   }
+}
+
+// ---------------------------------------------------------------- official warnings
+async function sendWarnings(c: Ctx, user: User): Promise<void> {
+  const lang = user.lang;
+  await quiet(c.tg.sendChatAction(user.chatId));
+  const malaysian = /malaysia|马来西亚/i.test(user.country);
+  const region = user.region === "" ? await resolveRegion(c.wx, c.env.DB, user) : user.region;
+  const state = canonicalState(region);
+  if (!state) return void (await c.tg.sendMessage(user.chatId, t(lang, malaysian ? "warn_no_region" : "warn_not_my")));
+
+  let all;
+  try {
+    all = await c.wx.warnings(true); // someone who types /warnings wants the latest
+  } catch {
+    return void (await c.tg.sendMessage(user.chatId, t(lang, "warn_feed_down")));
+  }
+  const now = new Date();
+  const current = currentLandWarnings(all, now);
+  const mine = current.filter((w) => mentionsState(w, state) && coversArea(w, state, user.district, user.placeName));
+  await c.tg.sendMessage(user.chatId, warningsListMessage(mine, state, current.length - mine.length, prefsOf(user), nowMalaysia(now)));
+}
+
+// ---------------------------------------------------------------- broadcast buttons
+async function onBroadcastCallback(c: Ctx, q: TgCallback, data: string): Promise<void> {
+  const msg = q.message!;
+  if (!isAdmin(c.env, q.from.id)) return void (await quiet(c.tg.answerCallback(q.id)));
+  const adminId = q.from.id;
+  if (data === "bc:no") {
+    await dropDraft(c.env, adminId);
+    await quiet(c.tg.answerCallback(q.id, "Cancelled"));
+    return void (await quiet(c.tg.editMessageText(msg.chat.id, msg.message_id, "❌ Broadcast cancelled. Nothing was sent.")));
+  }
+  const r = await startBroadcast(c.env, adminId);
+  if (!r.ok) {
+    const why = { busy: "Another broadcast is already running.", "no-draft": "That preview has expired. Send /broadcast again.", nobody: "There are no active users to send to." }[r.reason];
+    return void (await quiet(c.tg.answerCallback(q.id, why, true)));
+  }
+  await quiet(c.tg.answerCallback(q.id, "Sending…"));
+  await quiet(c.tg.editMessageText(msg.chat.id, msg.message_id, `📢 Sending to <b>${r.total}</b> user(s) in batches. I'll message you when it's done; <code>/status</code> shows progress.`));
 }

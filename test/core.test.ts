@@ -296,6 +296,21 @@ describe("telegram payload limits", () => {
     expect(rows.filter((b: any) => b.callback_data.startsWith("al:aqi:")).map((b: any) => b.callback_data)).toEqual(AQI_ALERT_LEVELS.map((n) => `al:aqi:${n}`));
   });
 
+  it("alerts page has the official-warnings toggle, ON by default", () => {
+    const label = (u: ReturnType<typeof makeUser>) => (kb.settingsView(u, "alerts").markup as any).inline_keyboard.flat().find((b: any) => b.callback_data === "al:warn").text as string;
+    expect(label(makeUser())).toMatch(/^✅.*Official warnings: ON/);
+    expect(label(makeUser({ warningsOn: false }))).toMatch(/^⬜.*Official warnings: OFF/);
+    expect(label(makeUser({ lang: "zh" }))).toContain("官方警报");
+  });
+
+  it("alert messages can be muted, including warnings", () => {
+    for (const kind of ["rain", "aqi", "warn"] as const) expect(callbacks(kb.alertKeyboard(kind, "en"))).toEqual([`mute:${kind}`, "v:now"]);
+  });
+
+  it("the broadcast preview has Send and Cancel", () => {
+    expect(callbacks(kb.broadcastKeyboard())).toEqual(["bc:ok", "bc:no"]);
+  });
+
   it("recognises the bottom-bar buttons in every language", () => {
     for (const lang of ["en", "ms", "zh"] as const) {
       expect(kb.isButton(t(lang, "btn_now"), "btn_now")).toBe(true);
@@ -315,8 +330,11 @@ describe("telegram payload limits", () => {
       }
     }
     const names = botCommands("en").map((c) => c.command);
-    for (const c of ["weather", "hourly", "tomorrow", "week", "evening", "settings"]) expect(names).toContain(c);
-    expect(botCommands("en", true).map((c) => c.command)).toContain("allow");
-    expect(names).not.toContain("allow");
+    for (const c of ["weather", "hourly", "tomorrow", "week", "warnings", "evening", "settings"]) expect(names).toContain(c);
+    const admin = botCommands("en", true).map((c) => c.command);
+    for (const c of ["allow", "users", "block", "status", "broadcast"]) {
+      expect(admin).toContain(c);
+      expect(names).not.toContain(c); // admin commands are never shown to ordinary users
+    }
   });
 });

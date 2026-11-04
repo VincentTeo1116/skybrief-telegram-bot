@@ -132,6 +132,10 @@ export function makeUser(o: Partial<User> = {}): User {
     eveningOn: false,
     eveningTime: "18:00",
     lastEvening: "",
+    region: "Kuala Lumpur",
+    district: "",
+    warningsOn: true,
+    warnSeen: [],
     ...o,
   };
 }

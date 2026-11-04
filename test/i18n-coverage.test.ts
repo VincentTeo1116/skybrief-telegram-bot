@@ -18,7 +18,7 @@ const ternary = [...code.matchAll(/\bt\([^,]+,\s*[^"?]*\?\s*"([a-z0-9_]+)"\s*:\s
 // keys built from a known set (these loops are the only places keys are composed)
 const composed = [
   ...SECTIONS.map((s) => `sec_${s}`),
-  ...["weather", "hourly", "tomorrow", "week", "city", "daily", "settime", "evening", "settings", "help"].map((c) => `cmd_${c}`),
+  ...["weather", "hourly", "tomorrow", "week", "warnings", "city", "daily", "settime", "evening", "settings", "help"].map((c) => `cmd_${c}`),
   ...["rising", "falling", "steady"].map((k) => `aqi_${k}`),
   ...["morning", "afternoon", "evening"].map((k) => `p_${k}`),
   "ribbon_daily",

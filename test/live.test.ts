@@ -8,6 +8,8 @@ import { bestOutside, dailyIndex, hourIndex } from "../src/insights";
 import { convertMetNo, sunTimes, type MetNoResponse } from "../src/metno";
 import type { Place, Report } from "../src/types";
 import { WeatherService } from "../src/weather";
+import { canonicalState, currentLandWarnings, nowMalaysia } from "../src/warnings";
+import { warningMessage, warningsListMessage } from "../src/format";
 import { P } from "./fixtures";
 
 const LIVE = process.env.LIVE === "1";
@@ -131,4 +133,30 @@ describe.skipIf(!(LIVE && process.env.WAQI_TOKEN))("live WAQI", () => {
     expect(r.aq?.source).toBe("WAQI (measured)");
     expect(r.aq!.km!).toBeLessThan(40);
   });
+});
+
+describe.skipIf(!LIVE)("live MetMalaysia warnings", () => {
+  it(
+    "the real feed parses, and every warning in it renders for every state in every language",
+    async () => {
+      const all = await new WeatherService().warnings(true);
+      expect(all.length).toBeGreaterThan(0); // the feed always has at least "No Advisory"
+      const now = new Date();
+      const nowLocal = nowMalaysia(now);
+      const states = ["Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", "Pahang", "Perak", "Perlis", "Pulau Pinang", "Sabah", "Sarawak", "Selangor", "Terengganu", "Kuala Lumpur", "Putrajaya", "Labuan"] as const;
+      for (const w of all.filter((x) => x.kind === "land" && x.from && x.to)) {
+        for (const state of states) {
+          for (const lang of ["en", "ms", "zh"] as const) {
+            const text = warningMessage(w, state, P(lang), nowLocal);
+            expect(text.length, `${w.titleEn} / ${state} / ${lang}`).toBeLessThan(2000);
+            clean(text);
+          }
+        }
+      }
+      for (const state of states) clean(warningsListMessage(currentLandWarnings(all, now), state, 0, P("en"), nowLocal));
+      for (const w of all) expect(["land", "sea", "none"]).toContain(w.kind);
+      expect(canonicalState("Wilayah Persekutuan Kuala Lumpur")).toBe("Kuala Lumpur");
+    },
+    60_000,
+  );
 });

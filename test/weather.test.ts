@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MetNoResponse } from "../src/metno";
 import type { Place } from "../src/types";
-import { WeatherError, WeatherService } from "../src/weather";
+import { WeatherError, WeatherService, clearWarningsCache } from "../src/weather";
+import warningsFeed from "./data/mmd-warnings.json";
 import sample from "./data/metno-kl.json";
 import { makeAirHourly, makeForecast } from "./fixtures";
 
@@ -30,6 +31,7 @@ function healthy(url: string): Response {
   if (url.includes("api.waqi.info")) return json(waqi());
   if (url.includes("api.met.no")) return json(sample);
   if (url.includes("geocoding-api")) return json({ results: [] });
+  if (url.includes("api.data.gov.my")) return json(warningsFeed);
   return new Response("not mocked", { status: 404 });
 }
 
@@ -249,5 +251,81 @@ describe("configurable endpoints (used by the end-to-end tests)", () => {
     expect(calls.every((c) => c.url.startsWith("http://mock.test/"))).toBe(true);
     expect(calls[0].url).toMatch(/^http:\/\/mock\.test\/f\?/);
     void (sample as unknown as MetNoResponse);
+  });
+});
+
+
+describe("official warnings feed", () => {
+  beforeEach(() => clearWarningsCache());
+  const feedDown = (url: string) => (url.includes("api.data.gov.my") ? new Response("down", { status: 503 }) : healthy(url));
+
+  it("fetches and parses the MetMalaysia feed (note the trailing slash)", async () => {
+    const items = await new WeatherService().warnings();
+    expect(items.map((w) => w.kind).sort()).toEqual(["land", "none", "sea"]);
+    expect(hits("api.data.gov.my")[0].url).toBe("https://api.data.gov.my/weather/warning/");
+    expect(hits("api.data.gov.my")[0].headers["User-Agent"]).toContain("github.com");
+  });
+
+  it("caches for 5 minutes and force bypasses the cache", async () => {
+    const svc = new WeatherService();
+    await svc.warnings();
+    await svc.warnings();
+    expect(hits("api.data.gov.my")).toHaveLength(1);
+    await svc.warnings(true);
+    expect(hits("api.data.gov.my")).toHaveLength(2);
+  });
+
+  it("reuses a recent copy when the feed is briefly down", async () => {
+    const svc = new WeatherService();
+    const first = await svc.warnings();
+    handler = feedDown;
+    expect(await svc.warnings(true)).toEqual(first); // forced refresh failed: the recent copy is better than nothing
+  });
+
+  it("fails clearly when there is no copy to fall back on", async () => {
+    handler = feedDown;
+    await expect(new WeatherService().warnings()).rejects.toBeInstanceOf(WeatherError);
+  });
+
+  it("rejects a feed in an unexpected format and keeps the good copy", async () => {
+    const svc = new WeatherService();
+    const good = await svc.warnings();
+    handler = (url) => (url.includes("api.data.gov.my") ? json({ message: "maintenance" }) : healthy(url));
+    expect(await svc.warnings(true)).toEqual(good);
+    clearWarningsCache();
+    await expect(svc.warnings()).rejects.toBeInstanceOf(WeatherError);
+  });
+});
+
+describe("health probe", () => {
+  beforeEach(() => clearWarningsCache());
+  const place = () => fresh();
+
+  it("healthy: only the primary and the warnings feed are touched (the backup is left alone)", async () => {
+    const r = await new WeatherService().healthCheck(place());
+    expect(r).toEqual({ primary: null, backup: undefined, warnings: null });
+    expect(hits("api.met.no")).toHaveLength(0);
+  });
+
+  it("primary down, backup fine: reports the primary error and that the backup works", async () => {
+    handler = (url) => (url.includes("//api.open-meteo.com/") ? new Response("x", { status: 503 }) : healthy(url));
+    const r = await new WeatherService().healthCheck(place());
+    expect(r.primary).toMatch(/open-meteo/i);
+    expect(r.backup).toBeNull();
+    expect(r.warnings).toBeNull();
+  });
+
+  it("both down: reports both", async () => {
+    handler = (url) => (url.includes("//api.open-meteo.com/") || url.includes("api.met.no") ? new Response("x", { status: 500 }) : healthy(url));
+    const r = await new WeatherService().healthCheck(place());
+    expect(r.primary).toBeTruthy();
+    expect(r.backup).toBeTruthy();
+  });
+
+  it("the warnings feed is judged on its own", async () => {
+    handler = (url) => (url.includes("api.data.gov.my") ? new Response("x", { status: 500 }) : healthy(url));
+    const r = await new WeatherService().healthCheck(place());
+    expect(r.primary).toBeNull();
+    expect(r.warnings).toBeTruthy();
   });
 });

@@ -22,8 +22,11 @@ export interface Env {
   NOMINATIM_URL?: string;
   WAQI_URL?: string;
   METNO_URL?: string;
+  WARNINGS_URL?: string;
   /** "1" = run the alert pass on every cron tick instead of every 15 minutes. */
   ALERTS_EVERY_MINUTE?: string;
+  /** "1" = run the health probe on every cron tick instead of every 5 minutes. */
+  HEALTH_EVERY_MINUTE?: string;
 }
 
 export type Lang = "en" | "ms" | "zh";
@@ -39,6 +42,10 @@ export interface Place {
   lon: number;
   country: string;
   admin?: string;
+  /** Canonical English state name when known (Malaysia only): used to match official warnings. */
+  state?: string;
+  /** District / county when known (Malaysia): lets official warnings that list districts be matched precisely. */
+  district?: string;
   tz: string;
 }
 
@@ -74,6 +81,11 @@ export interface User {
   eveningOn: boolean;
   eveningTime: string;
   lastEvening: string;
+  // official warnings
+  region: string;
+  district: string;
+  warningsOn: boolean;
+  warnSeen: string[];
 }
 
 /** Everything that controls how a report is rendered for one person. */

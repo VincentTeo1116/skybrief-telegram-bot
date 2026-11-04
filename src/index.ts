@@ -1,9 +1,45 @@
-import { runAlerts } from "./alerts";
+import { runAlerts, runWarnings } from "./alerts";
+import { runBroadcast } from "./broadcast";
 import { runDaily } from "./daily";
+import { runHealth } from "./health";
+import { recordCron } from "./stats";
 import { botCommands, handleUpdate } from "./handlers";
 import { Telegram } from "./telegram";
 import type { Env, TgUpdate } from "./types";
 import { safeEqual } from "./util";
+
+const log = (event: string) => (e: unknown) => console.log(JSON.stringify({ event, error: String(e).slice(0, 200) }));
+
+/**
+ * One cron tick (every minute). The free plan caps outgoing requests per invocation, so the jobs are spread across
+ * different minutes and skipped when reports are due:
+ *   every minute  morning / evening reports, then a broadcast batch if one is running
+ *   :02 :07 :12…  health probe                       :05 :20 :35 :50  rain + air-quality alerts
+ *                                                    :10 :25 :40 :55  official warnings
+ */
+export async function runCron(env: Env, now: Date): Promise<void> {
+  const minute = now.getUTCMinutes();
+  const test = env.ALERTS_EVERY_MINUTE === "1";
+  const daily = await runDaily(env, now).catch((e) => {
+    log("daily_crashed")(e);
+    return { due: 0, sent: 0, failed: 0, morning: 0, evening: 0 };
+  });
+
+  if (daily.due === 0) {
+    if (env.HEALTH_EVERY_MINUTE === "1" || minute % 5 === 2) await runHealth(env, now).catch(log("health_crashed"));
+    let busy = false;
+    if (test || minute % 15 === 5) {
+      busy = true;
+      await runAlerts(env, now).catch(log("alerts_crashed"));
+    }
+    if (test || minute % 15 === 10) {
+      busy = true;
+      await runWarnings(env, now).catch(log("warnings_crashed"));
+    }
+    if (!busy || test) await runBroadcast(env, now).catch(log("broadcast_crashed"));
+  }
+  await recordCron(env, now, { due: daily.due, sent: daily.sent, failed: daily.failed }).catch(log("record_cron_failed"));
+}
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), { status, headers: { "content-type": "application/json" } });
@@ -49,20 +85,6 @@ export default {
   },
 
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const now = new Date(event.scheduledTime);
-    ctx.waitUntil(
-      (async () => {
-        // Every minute: morning/evening reports that have just become due.
-        const daily = await runDaily(env, now).catch((e) => {
-          console.log(JSON.stringify({ event: "daily_crashed", error: String(e) }));
-          return { due: 0, sent: 0, failed: 0 };
-        });
-        // Every 15 minutes (:05, :20, :35, :50): rain and air-quality alerts. Offset from :00/:30 where most reports are due.
-        // (skipped when reports were due this minute: both together could exceed the per-invocation request cap)
-        if (daily.due === 0 && (env.ALERTS_EVERY_MINUTE === "1" || now.getUTCMinutes() % 15 === 5)) {
-          await runAlerts(env, now).catch((e) => console.log(JSON.stringify({ event: "alerts_crashed", error: String(e) })));
-        }
-      })(),
-    );
+    ctx.waitUntil(runCron(env, new Date(event.scheduledTime)));
   },
 } satisfies ExportedHandler<Env>;

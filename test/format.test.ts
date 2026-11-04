@@ -9,10 +9,14 @@ import {
   tips,
   tomorrowMessage,
   uvLabel,
+  warningBlock,
+  warningMessage,
+  warningsListMessage,
   weatherMessage,
   weekMessage,
   welcomeMessage,
 } from "../src/format";
+import type { Warning } from "../src/warnings";
 import { rainAlert } from "../src/insights";
 import { MODEL_AQ, STATION_AQ, P, makeAirHourly, makeReport } from "./fixtures";
 
@@ -392,5 +396,131 @@ describe("alert and inline messages", () => {
     expect(welcomeMessage("ms", "", "Ipoh", "08:30")).toContain("Hai kawan!");
     expect(welcomeMessage("zh", "小明", "怡保", "08:30")).toContain("你好，小明！");
     expect(welcomeMessage("en", "<x>", "Ipoh", "08:30")).toContain("&lt;x&gt;");
+  });
+});
+
+
+describe("official warnings in messages", () => {
+  const NOW = "2026-11-03T08:15"; // the fixture report's local time
+  const WARN = (o: Partial<Warning> = {}): Warning => ({
+    id: "w1",
+    issued: "2026-11-03T06:00",
+    from: "2026-11-03T06:00",
+    to: "2026-11-03T12:00",
+    titleEn: "Thunderstorms Warning",
+    titleBm: "Amaran Ribut Petir",
+    textEn: "Thunderstorms, heavy rain and strong winds are expected over the states of Kedah (Kulim) • Perak (Kampar, Kinta) • Selangor (Sabak Bernam) until 12:00 PM; Tuesday, 3 November 2026.",
+    textBm: "Ribut petir, hujan lebat dan angin kencang dijangka di negeri Kedah (Kulim) • Perak (Kampar, Kinta) • Selangor (Sabak Bernam) sehingga 12:00 PM.",
+    instructionEn: "",
+    instructionBm: "",
+    kind: "land",
+    ...o,
+  });
+
+  it("puts the warning at the top of the report, right after the header", () => {
+    const text = weatherMessage(makeReport(MODEL_AQ), P(), undefined, [WARN()]);
+    expect(text).toContain("⚠️ <b>Official warnings</b>");
+    expect(text).toContain("• <b>Thunderstorms Warning</b> · until 12:00 PM");
+    expect(text).toContain("/warnings for details");
+    expect(text.indexOf("Kuala Lumpur")).toBeLessThan(text.indexOf("Official warnings"));
+    expect(text.indexOf("Official warnings")).toBeLessThan(text.indexOf("Humidity"));
+  });
+
+  it("adds nothing when no warning applies", () => {
+    expect(weatherMessage(makeReport(MODEL_AQ), P())).not.toContain("⚠️");
+    expect(weatherMessage(makeReport(MODEL_AQ), P(), undefined, [])).not.toContain("Official");
+    expect(warningBlock([], P(), NOW)).toBeNull();
+  });
+
+  it("lists up to three and counts the rest", () => {
+    const four = [1, 2, 3, 4].map((n) => WARN({ id: `w${n}`, titleEn: `Warning ${n}` }));
+    const block = warningBlock(four, P(), NOW)!;
+    expect(block).toContain("Warning 3");
+    expect(block).not.toContain("Warning 4");
+    expect(block).toContain("• +1");
+  });
+
+  it("shows the weekday when a warning ends on another day", () => {
+    expect(warningBlock([WARN({ to: "2026-11-04T10:00" })], P(), NOW)).toContain("until Wed 10:00 AM");
+  });
+
+  it("follows the language and the clock preference", () => {
+    expect(weatherMessage(makeReport(MODEL_AQ), P("ms"), undefined, [WARN()])).toContain("Amaran rasmi");
+    expect(weatherMessage(makeReport(MODEL_AQ), P("ms"), undefined, [WARN()])).toContain("Amaran Ribut Petir</b> · sehingga 12:00 PM");
+    expect(weatherMessage(makeReport(MODEL_AQ), P("zh"), undefined, [WARN()])).toContain("官方警报");
+    expect(warningBlock([WARN()], P("zh"), NOW)).toContain("至 12:00");
+    expect(warningBlock([WARN()], P("en", { clock: "24" }), NOW)).toContain("until 12:00");
+  });
+
+  it("is not affected by hidden report sections (a safety notice must not disappear)", () => {
+    const text = weatherMessage(makeReport(MODEL_AQ), P("en", { hidden: new Set(["tips", "air", "details"]) }), undefined, [WARN()]);
+    expect(text).toContain("Official warnings");
+  });
+
+  it("shows one line in compact mode, with a count of the others", () => {
+    const one = weatherMessage(makeReport(MODEL_AQ), P("en", { compact: true }), undefined, [WARN()]);
+    expect(one).toContain("⚠️ <b>Thunderstorms Warning</b> (until 12:00 PM)");
+    const two = weatherMessage(makeReport(MODEL_AQ), P("en", { compact: true }), undefined, [WARN(), WARN({ id: "w2", titleEn: "Hot Weather Warning" })]);
+    expect(two).toContain("(until 12:00 PM) +1");
+    expect(two.split("\n").length).toBeLessThanOrEqual(10);
+  });
+
+  describe("the full warning message", () => {
+    it("has the title, validity, your part of the warning and the source", () => {
+      const text = warningMessage(WARN(), "Perak", P(), NOW);
+      expect(text).toContain("⚠️ <b>Official warning</b> · MetMalaysia");
+      expect(text).toContain("<b>Thunderstorms Warning</b>");
+      expect(text).toContain("Valid 6:00 AM – 12:00 PM");
+      expect(text).toContain("📍 Perak (Kampar, Kinta)");
+      expect(text).toContain("Thunderstorms, heavy rain and strong winds");
+      expect(text).toContain("Source: Malaysian Meteorological Department (MetMalaysia)");
+      expect(text.length).toBeLessThan(1500);
+    });
+
+    it("includes the official instruction when there is one", () => {
+      expect(warningMessage(WARN({ instructionEn: "Stay indoors and avoid open areas." }), "Perak", P(), NOW)).toContain("<i>Stay indoors and avoid open areas.</i>");
+      expect(warningMessage(WARN(), "Perak", P(), NOW)).not.toContain("<i>Stay");
+    });
+
+    it("uses the Malay text for Malay users and says the original is English for Chinese users", () => {
+      const ms = warningMessage(WARN(), "Perak", P("ms"), NOW);
+      expect(ms).toContain("Amaran Ribut Petir");
+      expect(ms).toContain("Sah 6:00 AM – 12:00 PM");
+      expect(ms).toContain("Ribut petir, hujan lebat");
+      expect(ms).toContain("Sumber: Jabatan Meteorologi Malaysia");
+      const zh = warningMessage(WARN(), "Perak", P("zh"), NOW);
+      expect(zh).toContain("有效期 06:00 – 12:00");
+      expect(zh).toContain("Thunderstorms Warning"); // MetMalaysia publishes no Chinese: the text stays English…
+      expect(zh).toContain("（官方原文为英文）"); // …and the message says so
+    });
+
+    it("escapes HTML coming from the feed", () => {
+      const text = warningMessage(WARN({ titleEn: "<b>Bad</b> & worse", textEn: "Perak <script> & more" }), "Perak", P(), NOW);
+      expect(text).toContain("&lt;b&gt;Bad&lt;/b&gt; &amp; worse");
+      expect(text).not.toContain("<script>");
+    });
+
+    it("stays short even for a very long warning", () => {
+      const long = "Perak (" + Array.from({ length: 80 }, (_, i) => `District${i}`).join(", ") + ") " + "word ".repeat(400);
+      expect(warningMessage(WARN({ textEn: long }), "Perak", P(), NOW).length).toBeLessThan(1500);
+    });
+  });
+
+  describe("the /warnings list", () => {
+    it("says so when nothing applies, and mentions warnings elsewhere", () => {
+      expect(warningsListMessage([], "Perak", 0, P(), NOW)).toBe("✅ No active official warnings for Perak.");
+      expect(warningsListMessage([], "Perak", 2, P(), NOW)).toContain("2 warning(s) are active in other states.");
+      expect(warningsListMessage([], "Perak", 0, P("ms"), NOW)).toContain("Tiada amaran rasmi");
+      expect(warningsListMessage([], "Perak", 0, P("zh"), NOW)).toContain("目前没有生效的官方警报");
+    });
+
+    it("shows up to three in full, with the heading only once", () => {
+      const five = [1, 2, 3, 4, 5].map((n) => WARN({ id: `w${n}`, titleEn: `Warning ${n}` }));
+      const text = warningsListMessage(five, "Perak", 0, P(), NOW);
+      expect(text.match(/Official warning<\/b>/g)).toHaveLength(1);
+      expect(text).toContain("Warning 3");
+      expect(text).not.toContain("Warning 4");
+      expect(text).toContain("+2");
+    });
   });
 });

@@ -14,6 +14,7 @@ import { convertMetNo, type MetNoResponse } from "./metno";
 import { nearestPreset, presetPlace } from "./presets";
 import type { Air, AirHourly, Env, Forecast, Lang, Place, Report, Source } from "./types";
 import { haversineKm, sleep } from "./util";
+import { parseWarnings, type Warning } from "./warnings";
 
 export interface ServiceUrls {
   forecast: string;
@@ -22,6 +23,7 @@ export interface ServiceUrls {
   reverse: string;
   waqi: string;
   metno: string;
+  warnings: string;
 }
 
 const DEFAULT_URLS: ServiceUrls = {
@@ -31,6 +33,7 @@ const DEFAULT_URLS: ServiceUrls = {
   reverse: "https://nominatim.openstreetmap.org/reverse",
   waqi: "https://api.waqi.info/feed",
   metno: "https://api.met.no/weatherapi/locationforecast/2.0/complete",
+  warnings: "https://api.data.gov.my/weather/warning/", // the trailing slash matters: without it the API redirects
 };
 
 const REPO = "github.com/VincentTeo1116/skybrief-telegram-bot";
@@ -43,6 +46,13 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 export class WeatherError extends Error {}
 
 const cache = new Map<string, Report>(); // shared by all requests handled by this isolate
+
+const WARNINGS_TTL_MS = 5 * 60 * 1000;
+const WARNINGS_STALE_OK_MS = 30 * 60 * 1000; // if the feed is briefly down, a recent copy is better than nothing
+let warningsCache: { at: number; items: Warning[] } | null = null;
+export const clearWarningsCache = () => {
+  warningsCache = null;
+};
 
 export function placeLabel(p: Place): string {
   const parts = [p.name];
@@ -75,6 +85,7 @@ export function makeWeather(env: Env): WeatherService {
     ...(env.NOMINATIM_URL ? { reverse: env.NOMINATIM_URL } : {}),
     ...(env.WAQI_URL ? { waqi: env.WAQI_URL } : {}),
     ...(env.METNO_URL ? { metno: env.METNO_URL } : {}),
+    ...(env.WARNINGS_URL ? { warnings: env.WARNINGS_URL } : {}),
   });
 }
 
@@ -205,6 +216,52 @@ export class WeatherService {
     return { aq: m.current, aqHourly: m.hourly };
   }
 
+  // ------------------------------------------------- official warnings
+  /** Current MetMalaysia warnings (all types, all states). Cached 5 minutes; a recent copy is reused if the feed is briefly down. */
+  async warnings(force = false, allowStale = true): Promise<Warning[]> {
+    const now = Date.now();
+    if (!force && warningsCache && now - warningsCache.at < WARNINGS_TTL_MS) return warningsCache.items;
+    try {
+      const raw = await this.getJson<unknown>(this.urls.warnings, {}, 2, 8_000);
+      if (!Array.isArray(raw)) throw new WeatherError("Warnings feed returned an unexpected format");
+      warningsCache = { at: now, items: parseWarnings(raw) };
+      return warningsCache.items;
+    } catch (e) {
+      if (allowStale && warningsCache && now - warningsCache.at < WARNINGS_STALE_OK_MS) return warningsCache.items;
+      throw e instanceof WeatherError ? e : new WeatherError(String(e));
+    }
+  }
+
+  // ------------------------------------------------------ health probe
+  /** One cheap check of every dependency, for the admin monitoring. The backup is only tried when the primary fails. */
+  async healthCheck(place: Place, alsoBackup = false): Promise<{ primary: string | null; backup: string | null | undefined; warnings: string | null }> {
+    const fail = (e: unknown) => String(e instanceof Error ? e.message : e).slice(0, 160);
+    let primary: string | null = null;
+    let backup: string | null | undefined;
+    let warnings: string | null = null;
+    try {
+      await this.forecastOpenMeteo(place);
+    } catch (e) {
+      primary = fail(e);
+    }
+    // The backup is tested while the primary fails, and also while it is still marked as failing (to notice its recovery).
+    if (primary !== null || alsoBackup) {
+      try {
+        const raw = await this.getJson<MetNoResponse>(this.urls.metno, { lat: place.lat.toFixed(4), lon: place.lon.toFixed(4) }, 1, 8_000);
+        convertMetNo(raw, place);
+        backup = null;
+      } catch (e2) {
+        backup = fail(e2);
+      }
+    }
+    try {
+      await this.warnings(true, false); // a health probe must see the REAL state: no stale copy that would hide an outage
+    } catch (e) {
+      warnings = fail(e);
+    }
+    return { primary, backup, warnings };
+  }
+
   // ---------------------------------------------------------------- public
   /**
    * @param allowFallback use the backup forecast source if Open-Meteo is down. Pass false when the result
@@ -246,6 +303,7 @@ export class WeatherService {
       lon: r.longitude,
       country: r.country ?? "",
       admin: r.admin1 ?? "",
+      district: r.admin2 ?? "",
       tz: r.timezone ?? "UTC",
     }));
   }
@@ -262,7 +320,7 @@ export class WeatherService {
       const local = a.suburb || a.city_district || a.neighbourhood || a.quarter;
       const city = a.city || a.town || a.village || a.municipality || a.county;
       const name = local && city && local !== city ? `${local}, ${city}` : local || city;
-      if (name) return { name, lat, lon, country: a.country ?? "", admin: a.state ?? "", tz: "UTC" };
+      if (name) return { name, lat, lon, country: a.country ?? "", admin: a.state ?? "", district: a.county || a.state_district || "", tz: "UTC" };
     } catch {
       /* fall through to the fallbacks */
     }

@@ -146,6 +146,8 @@ const vars = {
   NOMINATIM_URL: `${WX}/reverse`,
   WAQI_URL: `${WX}/waqi`,
   METNO_URL: `${WX}/metno`,
+  WARNINGS_URL: `${WX}/warnings`,
+  HEALTH_EVERY_MINUTE: "1",
 };
 worker = spawn(
   "npx",
@@ -458,6 +460,186 @@ try {
   const users2 = await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("Users ("))[0]);
   check("/users no longer flags alerts once they are switched off", !!users2 && !/user2002[\s\S]{0,0}⚠️/.test(text(users2)) && !text(users2).split("\n").find((l) => l.includes("2002"))?.includes("⚠️"));
 
+  // =========================================================== 10b. official warnings
+  console.log("\nOfficial warnings (MetMalaysia)");
+  const isWarningPush = (c) => text(c).includes("· MetMalaysia");
+  const pushesTo = (n, id) => sentTo(n, id, isWarningPush);
+  for (const id of [5005, 6006, 7007]) await say(ADMIN, `/allow ${id}`);
+  await sleep(900);
+  for (const [id, name] of [[5005, "Perak Pat"], [6006, "Shah Sam"], [7007, "Tokyo Tom"]]) await say(id, "/start", name);
+  await sleep(2500);
+  n = mark();
+  await say(5005, "Ipoh");
+  await waitFor(() => sentTo(n, 5005, (c) => text(c).includes("Which one"))[0]);
+  n = mark();
+  await tap(5005, "pick:0");
+  check("a user in Ipoh is saved (state Perak, district Kinta)", !!(await waitFor(() => edits(n, (c) => text(c).includes("Location saved"))[0])));
+  n = mark();
+  await tap(6006, "pre:2");
+  check("a user in Shah Alam is saved (state Selangor, district Petaling)", !!(await waitFor(() => edits(n, (c) => text(c).includes("Shah Alam"))[0])));
+  n = mark();
+  await say(7007, "Tokyo");
+  await waitFor(() => sentTo(n, 7007, (c) => text(c).includes("Which one"))[0]);
+  n = mark();
+  await tap(7007, "pick:0");
+  await waitFor(() => edits(n, (c) => text(c).includes("Location saved"))[0]);
+
+  n = mark();
+  await trigger(); // only a SEA warning (listing Penang, Perak, Selangor) and "No Advisory" are active
+  await sleep(3000);
+  check("a sea warning is never sent to people on land (even though it names their state)", !since(n).some(isWarningPush));
+
+  await mockSet({ warnOn: 1 });
+  n = mark();
+  await say(ALICE, "/warnings");
+  const wl = await waitFor(() => sentTo(n, ALICE, (c) => text(c).includes("Thunderstorms Warning"))[0]);
+  check("/warnings lists the active warning with validity, area, instruction and source", !!wl && ["Official warning", "Valid", "Kuala Lumpur", "Stay away from open areas", "Source: Malaysian Meteorological Department"].every((s) => text(wl).includes(s)), text(wl ?? {}));
+  check("…and leaves out the sea warning", !!wl && !text(wl).includes("Rough Seas"));
+  n = mark();
+  await say(ALICE, "/weather");
+  const repW = await waitFor(() => sentTo(n, ALICE, (c) => text(c).includes("Humidity"))[0]);
+  check("today's report shows the warning at the top", !!repW && text(repW).includes("⚠️ <b>Official warnings</b>") && text(repW).includes("Thunderstorms Warning") && text(repW).indexOf("Official warnings") < text(repW).indexOf("Humidity"));
+
+  n = mark();
+  await trigger();
+  await waitFor(() => pushesTo(n, ALICE)[0] && pushesTo(n, ADMIN)[0] && pushesTo(n, 5005)[0]);
+  await sleep(2500);
+  const pAlice = pushesTo(n, ALICE)[0];
+  const pAdmin = pushesTo(n, ADMIN)[0];
+  const pPerak = pushesTo(n, 5005)[0];
+  check("people in KL, and in Perak (Kinta is listed), are pushed the new warning", !!pAlice && !!pAdmin && !!pPerak);
+  check("each push has a Mute button and a link to the full report", !!pAlice && !!btn(pAlice, "mute:warn") && !!btn(pAlice, "v:now"));
+  check("the push names the user's own part of the warning", !!pPerak && text(pPerak).includes("📍 Perak (Kampar, Kinta)") && !text(pPerak).includes("Rough Seas"), text(pPerak ?? {}));
+  check("pushes follow each user's language (Chinese admin)", !!pAdmin && text(pAdmin).includes("官方警报") && text(pAdmin).includes("（官方原文为英文）"));
+  check("exactly ONE push each", [ALICE, ADMIN, 5005].every((id) => pushesTo(n, id).length === 1));
+  check("a Shah Alam user is NOT pushed: the warning lists only Selangor's Sabak Bernam district", pushesTo(n, 6006).length === 0);
+  check("a Tokyo user is not pushed (Malaysia only)", pushesTo(n, 7007).length === 0);
+  check("people who never pressed Start, or are blocked, are not messaged", [4004, 777, BLOCKED].every((id) => pushesTo(n, id).length === 0));
+  n = mark();
+  await say(6006, "/warnings");
+  const shahList = await waitFor(() => sentTo(n, 6006, (c) => text(c).includes("official warnings for Selangor"))[0]);
+  check("…and /warnings tells the Shah Alam user there are none for them, but some elsewhere", !!shahList && text(shahList).includes("No active official warnings for Selangor") && text(shahList).includes("1 warning(s) are active in other states"), text(shahList ?? {}));
+  n = mark();
+  await say(7007, "/warnings");
+  check("/warnings says Malaysia-only for a Tokyo user", !!(await waitFor(() => sentTo(n, 7007, (c) => text(c).includes("Malaysia only"))[0])));
+
+  n = mark();
+  await trigger();
+  await sleep(3000);
+  check("the same warning is not pushed again", !since(n).some(isWarningPush));
+  await mockSet({ warnVersion: 7 });
+  n = mark();
+  await trigger();
+  check("a re-issued (updated) warning IS pushed again", !!(await waitFor(() => pushesTo(n, ALICE)[0])));
+  await sleep(1500);
+  check("…still not to the Shah Alam user", pushesTo(n, 6006).length === 0);
+
+  n = mark();
+  await tap(ALICE, "mute:warn", 6100);
+  const mw = await waitFor(() => since(n).find((c) => c.method === "answerCallbackQuery"));
+  check("Mute turns official warnings off for that person", !!mw && mw.body.text === "Muted 🔕");
+  n = mark();
+  await tap(ALICE, "set:alerts");
+  const pageW = await waitFor(() => edits(n)[0]);
+  check("…and the Alerts page shows it OFF", !!pageW && btn(pageW, "al:warn")?.text.startsWith("⬜"));
+  await mockSet({ warnVersion: 11 });
+  n = mark();
+  await trigger();
+  await waitFor(() => pushesTo(n, ADMIN)[0]);
+  await sleep(1500);
+  check("a muted person gets nothing while others still do", pushesTo(n, ALICE).length === 0 && pushesTo(n, ADMIN).length === 1);
+  await tap(ALICE, "al:warn");
+  await sleep(700);
+  n = mark();
+  await trigger();
+  check("switching warnings back on delivers the one they missed", !!(await waitFor(() => pushesTo(n, ALICE)[0])));
+
+  await mockSet({ warnDown: 1 });
+  n = mark();
+  await say(ALICE, "/warnings");
+  check("if the feed is briefly down, people still get the recent copy", !!(await waitFor(() => sentTo(n, ALICE, (c) => text(c).includes("Thunderstorms Warning"))[0])));
+  await mockSet({ warnDown: 0, warnOn: 0 });
+  n = mark();
+  await say(ALICE, "/warnings");
+  check("once the warning is gone, /warnings says so", !!(await waitFor(() => sentTo(n, ALICE, (c) => text(c).includes("No active official warnings for Kuala Lumpur"))[0])));
+
+  // =========================================================== 10c. admin tools
+  console.log("\nAdmin tools: /status and /broadcast");
+  n = mark();
+  await say(ALICE, "/status");
+  await sleep(1500);
+  check("/status is admin-only", !since(n).some((c) => text(c).includes("SkyBrief status")));
+  n = mark();
+  await say(ADMIN, "/status");
+  const st = await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("SkyBrief status"))[0]);
+  check("/status shows the cron heartbeat, users, today's counters, dependencies", !!st && ["✅ Cron: last ran", "Users: 7 active", "blocked", "Today (UTC): morning", "warnings", "✅ Open-Meteo: OK", "✅ MetMalaysia warnings: OK", "No broadcasts yet"].every((s) => text(st).includes(s)), text(st ?? {}));
+  const warnCount = Number(/warnings (\d+)/.exec(text(st ?? {}))?.[1] ?? 0);
+  check("…and counted the warnings it sent today", warnCount >= 6, `warnings counter = ${warnCount}`);
+
+  n = mark();
+  await say(ALICE, "/broadcast hi all");
+  await sleep(1500);
+  check("/broadcast is admin-only", !since(n).some((c) => text(c).includes("Broadcast preview")));
+  n = mark();
+  await say(ADMIN, "/broadcast");
+  check("/broadcast without text shows how to use it", !!(await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("Usage"))[0])));
+  n = mark();
+  await say(ADMIN, "/broadcast " + "x".repeat(1001));
+  check("an over-long broadcast is refused", !!(await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("limit is 1000"))[0])));
+  n = mark();
+  await say(ADMIN, "/broadcast stop");
+  check("/broadcast stop with nothing running says so", !!(await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("No broadcast is running"))[0])));
+
+  const BODY = "Maintenance at 10pm <b>tonight</b> & thanks\nSecond line";
+  n = mark();
+  await say(ADMIN, `/broadcast ${BODY}`);
+  const prev = await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("Broadcast preview"))[0]);
+  check("the admin gets a preview showing exactly what will be sent, escaped", !!prev && text(prev).includes("Maintenance at 10pm &lt;b&gt;tonight&lt;/b&gt; &amp; thanks\nSecond line") && text(prev).includes("📢 <b>Message from the admin</b>"), text(prev ?? {}));
+  check("…with the number of recipients and Send / Cancel buttons", !!prev && text(prev).includes("Send to <b>7</b>") && !!btn(prev, "bc:ok") && !!btn(prev, "bc:no"));
+  n = mark();
+  await tap(ALICE, "bc:ok");
+  await trigger();
+  await sleep(3000);
+  check("a non-admin pressing Send does nothing", !since(n).some((c) => text(c).includes("Message from the admin")));
+  n = mark();
+  await tap(ADMIN, "bc:no");
+  check("Cancel discards the draft", !!(await waitFor(() => edits(n, (c) => text(c).includes("cancelled"))[0])));
+  n = mark();
+  await trigger();
+  await sleep(2500);
+  check("…and nothing is sent", !since(n).some((c) => text(c).includes("Message from the admin")));
+
+  await say(ADMIN, `/broadcast ${BODY}`);
+  await sleep(1200);
+  n = mark();
+  await tap(ADMIN, "bc:ok");
+  check("Send starts the broadcast", !!(await waitFor(() => edits(n, (c) => text(c).includes("Sending to <b>7</b>"))[0])));
+  n = mark();
+  await say(ADMIN, "/broadcast another one");
+  check("a second broadcast is refused while one is running", !!(await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("already running"))[0])));
+  n = mark();
+  await trigger();
+  const fin = await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("Broadcast finished"))[0]);
+  await sleep(1500);
+  const got = (id) => sentTo(n, id, (c) => text(c).includes("📢 <b>Message from the admin</b>"));
+  check("every reachable active user got it exactly once", [ADMIN, ALICE, 4004, 5005, 6006, 7007].every((id) => got(id).length === 1), JSON.stringify([ADMIN, ALICE, 4004, 5005, 6006, 7007].map((id) => got(id).length)));
+  check("…with the text escaped and the line break kept", got(ALICE).length === 1 && text(got(ALICE)[0]).includes("&lt;b&gt;tonight&lt;/b&gt; &amp; thanks\nSecond line"));
+  check("blocked and unknown users got nothing", got(BLOCKED).length === 0 && got(STRANGER).length === 0);
+  check("the user who blocked the bot was tried once and counted as unreachable", since(n).filter((c) => c.body.chat_id === GHOST && text(c).includes("Message from the admin")).length === 1);
+  check("the admin is told the result", !!fin && text(fin).includes("delivered to <b>6</b> of 7") && text(fin).includes("1 could not be reached"), text(fin ?? {}));
+  n = mark();
+  await tap(ADMIN, "bc:ok");
+  const stale = await waitFor(() => since(n).find((c) => c.method === "answerCallbackQuery"));
+  check("pressing Send on an old preview says it expired", !!stale && stale.body.show_alert === true && /expired/i.test(stale.body.text));
+  n = mark();
+  await trigger();
+  await sleep(2500);
+  check("nothing is sent twice", !since(n).some((c) => text(c).includes("Message from the admin")));
+  n = mark();
+  await say(ADMIN, "/status");
+  const st2 = await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("SkyBrief status"))[0]);
+  check("/status remembers the last broadcast", !!st2 && text(st2).includes("Last broadcast") && text(st2).includes("6 delivered, 1 unreachable"), text(st2 ?? {}));
+
   // =========================================================== 11. outages & the backup source
   console.log("\nWhen the weather service is down");
   await mockSet({ forecastDown: 1 });
@@ -495,6 +677,54 @@ try {
   await tap(ALICE, "r:now");
   const rec = await waitFor(() => edits(n)[0]);
   check("service recovers → back to Open-Meteo", !!rec && text(rec).includes("Weather: Open-Meteo") && !text(rec).includes("backup"));
+
+  // =========================================================== 11b. health alerts to the admin
+  console.log("\nHealth alerts to the admin");
+  const adminSaid = (n, re) => sentTo(n, ADMIN, (c) => re.test(text(c)));
+  await mockSet({ forecastDown: 1 });
+  n = mark();
+  await trigger();
+  await trigger();
+  await sleep(1500);
+  check("no alert after only 2 failed checks (a blip isn't news)", !adminSaid(n, /has failed/).length);
+  await trigger();
+  const dn = await waitFor(() => adminSaid(n, /Open-Meteo \(weather\)<\/b> has failed 3 checks/)[0]);
+  check("after 3 failed checks the admin is told Open-Meteo is down and that the backup is in use", !!dn && text(dn).includes("MET Norway backup"), text(dn ?? {}));
+  await trigger();
+  await trigger();
+  await sleep(1500);
+  check("…once only (no repeats while it stays down)", adminSaid(n, /has failed/).length === 1);
+  check("the backup is fine, so there is no 'nothing works' alarm", !adminSaid(n, /NO weather source/).length);
+  n = mark();
+  await say(ADMIN, "/status");
+  const sd = await waitFor(() => sentTo(n, ADMIN, (c) => text(c).includes("SkyBrief status"))[0]);
+  check("/status shows the failing dependency and that the admin was alerted", !!sd && /❗ Open-Meteo: failing ×\d+/.test(text(sd)) && text(sd).includes("admin alerted"), text(sd ?? {}));
+
+  await mockSet({ metnoDown: 1 });
+  n = mark();
+  for (let i = 0; i < 3; i++) await trigger();
+  const crit = await waitFor(() => adminSaid(n, /NO weather source is working/)[0]);
+  check("when the backup fails too the admin gets a critical alert", !!crit);
+  await sleep(1000);
+  check("…once", adminSaid(n, /NO weather source/).length === 1);
+
+  await mockSet({ forecastDown: 0, metnoDown: 0 });
+  n = mark();
+  await trigger();
+  await waitFor(() => adminSaid(n, /Open-Meteo \(weather\) is back to normal/)[0] && adminSaid(n, /MET Norway \(backup weather\) is back to normal/)[0]);
+  check("recovery is announced for BOTH the primary and the backup", adminSaid(n, /Open-Meteo \(weather\) is back/).length === 1 && adminSaid(n, /MET Norway \(backup weather\) is back/).length === 1);
+
+  await mockSet({ warnDown: 1 });
+  n = mark();
+  for (let i = 0; i < 5; i++) await trigger();
+  await sleep(1000);
+  check("the warnings feed alert waits for 6 failed checks (30 minutes)", !adminSaid(n, /warnings feed/).length);
+  await trigger();
+  check("…then tells the admin once", !!(await waitFor(() => adminSaid(n, /MetMalaysia warnings feed<\/b> has been unreachable/)[0])));
+  await mockSet({ warnDown: 0 });
+  n = mark();
+  await trigger();
+  check("…and when it recovers", !!(await waitFor(() => adminSaid(n, /MetMalaysia warnings feed is back to normal/)[0])));
 
   // =========================================================== 12. inline mode
   console.log("\nInline mode (@bot city in any chat)");

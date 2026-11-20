@@ -5,7 +5,7 @@ import { savePlace } from "./location";
 import { setLanguage, settingsPatch } from "./settings";
 import { getUser, insertUser, listUsers, patchUser, placeOf, toggleSection, type UserPatch } from "./db";
 import { SECTIONS, inlineCard, weatherMessage, welcomeMessage } from "./format";
-import { LANGS, normLang, t } from "./i18n";
+import { isLang, normLang, t } from "./i18n";
 import * as kb from "./keyboards";
 import { DEFAULT_PLACE, matchPreset, presetPlace, PRESET_COUNT } from "./presets";
 import { Telegram, TelegramError, type BotCommand, type Markup } from "./telegram";
@@ -360,7 +360,7 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
       await showPage(u, "sec");
     } else if (data.startsWith("lang:")) {
       const code = data.slice(5);
-      if (!(code in LANGS)) return void (await ack());
+      if (!isLang(code)) return void (await ack());
       const newLang = normLang(code);
       if (newLang === lang) return void (await ack()); // already selected: nothing to redo
       const u = await setLanguage(c.env, c.wx, user, newLang);

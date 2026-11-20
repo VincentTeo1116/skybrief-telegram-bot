@@ -4,7 +4,7 @@
  */
 import { lastSentAfterChange } from "./daily";
 import { patchUser, type UserPatch } from "./db";
-import { LANGS } from "./i18n";
+import { isLang } from "./i18n";
 import { localisedPlace, syncActivePlace } from "./location";
 import type { ClockMode, Env, Lang, TempUnit, User, WindUnit } from "./types";
 import { AQI_ALERT_LEVELS, CLOCK_MODES, TEMP_UNITS, WIND_UNITS } from "./units";
@@ -40,8 +40,8 @@ export function parseSettingsChange(body: unknown): SettingsChange | null {
   const out: SettingsChange = {};
 
   if ("lang" in input) {
-    if (typeof input.lang !== "string" || !(input.lang in LANGS)) return null;
-    out.lang = input.lang as Lang;
+    if (!isLang(input.lang)) return null;
+    out.lang = input.lang;
   }
   if ("tempUnit" in input) {
     if (!(TEMP_UNITS as readonly unknown[]).includes(input.tempUnit)) return null;

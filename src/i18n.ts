@@ -692,8 +692,16 @@ const COMPASS8: Partial<Record<Lang, string[]>> = {
 };
 
 // ------------------------------------------------------------------ helpers
+/**
+ * Is this one of our language codes? Checks OWN keys only: with a plain `in`, names every object inherits
+ * ("constructor", "toString", "__proto__" ...) would pass as languages (security assessment, finding S-01).
+ */
+export function isLang(lang: unknown): lang is Lang {
+  return typeof lang === "string" && Object.prototype.hasOwnProperty.call(LANGS, lang);
+}
+
 export function normLang(lang: string | null | undefined): Lang {
-  return lang && lang in LANGS ? (lang as Lang) : DEFAULT_LANG;
+  return isLang(lang) ? lang : DEFAULT_LANG;
 }
 
 export function t(lang: Lang, key: string, params?: Record<string, string | number>): string {

@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { demoReport } from "../src/demo";
 import { IPU_MAX_KM, ipuBand, nearestIpu, parseIpu, type IpuStation } from "../src/ipu";
 import { MAX_PLACES, activeOf, isActivePlace, savedPlaces } from "../src/location";
+import { isLang, normLang } from "../src/i18n";
 import { afterAlertRow, alertKeyboard } from "../src/keyboards";
+import { readLimited } from "../src/miniapp";
+import { safeEqual } from "../src/util";
 import { buildDashboard, hazeOf, settingsView } from "../src/miniapp";
 import { parseSettingsChange, settingsPatch } from "../src/settings";
 import { MODEL_AQ, P, makeReport, makeUser } from "./fixtures";
@@ -295,5 +298,70 @@ describe("v2.5: a day hour by hour, home place, haze, alerts", () => {
     }
     expect(afterAlertRow("ms", "https://x.dev/app/")[1]).toEqual({ text: "📱 Buka papan pemuka", web_app: { url: "https://x.dev/app/" } });
     expect(afterAlertRow("en")).toHaveLength(1);
+  });
+});
+
+// ------------------------------------------------------------------ security assessment: regression tests for the fixes
+describe("security fixes (docs/SECURITY-ASSESSMENT.md)", () => {
+  it("S-01 only real language codes are languages, not names every object inherits", () => {
+    for (const bad of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf", "", "EN", "en ", "fr", null, undefined, 1, {}, ["en"]]) {
+      expect(isLang(bad), String(bad)).toBe(false);
+      expect(normLang(bad as string), String(bad)).toBe("en");
+      expect(parseSettingsChange({ lang: bad }), String(bad)).toBeNull();
+    }
+    expect([isLang("en"), isLang("ms"), isLang("zh")]).toEqual([true, true, true]);
+    expect([normLang("ms"), normLang("zh")]).toEqual(["ms", "zh"]);
+  });
+
+  it("S-04 secrets compare equal only when identical, whatever their lengths", () => {
+    expect(safeEqual("abc123", "abc123")).toBe(true);
+    for (const [a, b] of [["abc123", "abc124"], ["abc123", "abc12"], ["abc12", "abc123"], ["", "a"], ["a", ""], ["abc", "ABC"], ["a\u0000", "a"], ["aa", "a"]]) expect(safeEqual(a, b), `${a} / ${b}`).toBe(false);
+    expect(safeEqual("", "")).toBe(true); // callers refuse an empty expected secret before comparing
+  });
+
+  it("S-03 a body is read only up to the limit, declared or streamed", async () => {
+    const req = (body: BodyInit | null, headers: Record<string, string> = {}) => new Request("https://x.dev/api", { method: "POST", body, headers, ...(body instanceof ReadableStream ? { duplex: "half" } : {}) } as RequestInit);
+    expect(await readLimited(req("12345"), 10)).toEqual(new TextEncoder().encode("12345"));
+    expect(await readLimited(req("x".repeat(11)), 10)).toBeNull();
+    expect(await readLimited(req("x".repeat(10)), 10)).toHaveLength(10);
+    expect(await readLimited(req("ok", { "content-length": "999999" }), 10), "a declared length over the limit is refused unread").toBeNull();
+    expect(await readLimited(req(null), 10)).toHaveLength(0);
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(c) {
+        pulled++;
+        c.enqueue(new Uint8Array(1024));
+      },
+    });
+    expect(await readLimited(req(endless), 5000), "a stream with no declared length").toBeNull();
+    expect(pulled, "reading stopped soon after the limit, not at the end of the stream").toBeLessThan(20);
+  });
+});
+
+describe("S-02 /setup can have its own key", () => {
+  const call = async (env: Record<string, string>, key: string) => {
+    const worker = (await import("../src/index")).default;
+    // Telegram is unreachable here on purpose: getting PAST the key check shows up as a 500 from the failed call, not a 403
+    const res = await worker.fetch(new Request(`https://x.dev/setup?key=${key}`), { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_API_BASE: "http://127.0.0.1:1", ...env } as never, {} as never);
+    return res.status;
+  };
+
+  it("without SETUP_KEY the webhook secret opens /setup, as before", async () => {
+    expect(await call({ WEBHOOK_SECRET: "hook" }, "hook")).toBe(500);
+    expect(await call({ WEBHOOK_SECRET: "hook" }, "nope")).toBe(403);
+    expect(await call({ WEBHOOK_SECRET: "hook" }, "")).toBe(403);
+  });
+
+  it("with SETUP_KEY only that key works: the webhook secret no longer does", async () => {
+    expect(await call({ WEBHOOK_SECRET: "hook", SETUP_KEY: "setup" }, "setup")).toBe(500);
+    expect(await call({ WEBHOOK_SECRET: "hook", SETUP_KEY: "setup" }, "hook")).toBe(403);
+    expect(await call({ WEBHOOK_SECRET: "", SETUP_KEY: "setup" }, "setup"), "no webhook secret configured: refuse").toBe(403);
+    expect(await call({ WEBHOOK_SECRET: "", SETUP_KEY: "" }, ""), "nothing configured: an empty key must not match").toBe(403);
+  });
+
+  it("plain answers carry nosniff and are never cached", async () => {
+    const worker = (await import("../src/index")).default;
+    const res = await worker.fetch(new Request("https://x.dev/"), { WEBHOOK_SECRET: "hook" } as never, {} as never);
+    expect([res.headers.get("x-content-type-options"), res.headers.get("cache-control")]).toEqual(["nosniff", "no-store"]);
   });
 });

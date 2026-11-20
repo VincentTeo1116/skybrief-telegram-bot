@@ -153,6 +153,7 @@ Users can find their ID by messaging [@userinfobot](https://t.me/userinfobot). I
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | secret, required | Token from [@BotFather](https://t.me/BotFather) |
 | `WEBHOOK_SECRET` | secret, required | Random string (letters, digits, `_`, `-`). Telegram sends it with every update; it also protects `/setup` |
+| `SETUP_KEY` | secret, optional, recommended | A separate key for `/setup`. When set, `/setup` accepts only this, so the webhook secret never has to appear in a browser address bar or a request log |
 | `ADMIN_IDS` | secret, required | Comma-separated admin Telegram IDs |
 | `WAQI_TOKEN` | secret, optional | Enables measured AQI from the nearest station |
 | `ACCESS_MODE` | var in `wrangler.jsonc` | `approval` (default), `open` or `closed` |
@@ -299,6 +300,8 @@ wrangler.jsonc   Worker configuration
 ## Security notes
 
 * Never commit `secrets.json`, `.dev.vars` or `.env` (all git-ignored). Keep real tokens only in Cloudflare secrets.
+* A security assessment (design review plus automated attack tests) is in `docs/SECURITY-ASSESSMENT.md`, with the actions left for the owner. Re-run its tests with `npm run test:e2e`.
+* Set `SETUP_KEY` so the webhook secret is not used in the `/setup` URL: whoever holds the webhook secret can send the bot fake Telegram updates.
 * If a token is exposed, revoke it: `/revoke` in @BotFather, then update the secret.
 * The mini app's API only answers requests carrying a valid Telegram-signed session of an approved user. The page is served with a strict Content-Security-Policy (no inline scripts or styles).
 * The webhook only accepts requests carrying `WEBHOOK_SECRET`. Keep `ACCESS_MODE` on `approval` or `closed` unless you want a public bot.

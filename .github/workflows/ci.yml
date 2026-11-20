@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+# The job only needs to read the code. Without this line it would get the repository's default token rights.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest

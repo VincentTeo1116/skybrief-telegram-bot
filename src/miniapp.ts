@@ -570,9 +570,41 @@ async function onPlaces(env: Env, user: User, query: string): Promise<Response> 
   return apiJson({ results: results.map(placeLabel) });
 }
 
+/**
+ * Read a request body but stop as soon as it is longer than `max` bytes (null = too long). The declared length is
+ * only a first check: a streamed body declares none, so the bytes are counted as they arrive and the rest is never
+ * read into memory (security assessment, finding S-03).
+ */
+export async function readLimited(req: Request, max: number): Promise<Uint8Array | null> {
+  if (Number(req.headers.get("content-length") ?? 0) > max) return null;
+  if (!req.body) return new Uint8Array(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
+}
+
 /** A small JSON object from the page, or null for anything else (too long, not JSON, not an object). */
 async function readBody(req: Request): Promise<Record<string, unknown> | null> {
-  const raw = await req.text();
+  const bytes = await readLimited(req, MAX_BODY_CHARS * 4); // 4 bytes is the most one character can take
+  if (!bytes) return null;
+  const raw = new TextDecoder().decode(bytes);
   if (raw.length > MAX_BODY_CHARS) return null;
   try {
     const body = JSON.parse(raw);
@@ -672,10 +704,9 @@ async function onShare(env: Env, user: User, req: Request): Promise<Response> {
   const lang = user.lang;
   const fail = (status: number, code: string, extra: Record<string, string> = {}) => apiError(status, code, t(lang, "app_err_share"), extra);
   if (!(req.headers.get("content-type") ?? "").startsWith("image/jpeg")) return fail(400, "bad_request");
-  const declared = Number(req.headers.get("content-length") ?? 0);
-  if (declared > MAX_CARD_BYTES) return fail(413, "too_large");
-  const bytes = new Uint8Array(await req.arrayBuffer());
-  if (bytes.length < 1000 || bytes.length > MAX_CARD_BYTES) return fail(bytes.length > MAX_CARD_BYTES ? 413 : 400, "bad_request");
+  const bytes = await readLimited(req, MAX_CARD_BYTES);
+  if (!bytes) return fail(413, "too_large");
+  if (bytes.length < 1000) return fail(400, "bad_request");
   if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return fail(400, "bad_request"); // not a JPEG
 
   const now = Date.now();

@@ -63,11 +63,14 @@ export function parseIdList(value: string | undefined): number[] {
     .map(Number);
 }
 
-/** Constant-time string comparison (for secrets). */
+/**
+ * Compare two secrets without revealing, through how long it takes, where they first differ or how long the real
+ * one is: the loop always runs over the longer of the two (security assessment, finding S-04).
+ */
 export function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  let diff = a.length ^ b.length;
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
   return diff === 0;
 }
 

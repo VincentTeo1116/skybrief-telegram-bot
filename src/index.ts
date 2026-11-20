@@ -43,8 +43,10 @@ export async function runCron(env: Env, now: Date): Promise<void> {
   await recordCron(env, now, { due: daily.due, sent: daily.sent, failed: daily.failed }).catch(log("record_cron_failed"));
 }
 
+const SAFE = { "x-content-type-options": "nosniff", "cache-control": "no-store", "referrer-policy": "no-referrer" };
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body, null, 2), { status, headers: { "content-type": "application/json" } });
+  new Response(JSON.stringify(body, null, 2), { status, headers: { "content-type": "application/json", ...SAFE } });
+const plain = (text: string, status = 200) => new Response(text, { status, headers: { "content-type": "text/plain; charset=utf-8", ...SAFE } });
 
 /** Unknown address: the custom page with a REAL 404 status for people, plain text for everything else (NFR-7). */
 async function notFound(req: Request, env: Env, url: URL): Promise<Response> {
@@ -61,7 +63,7 @@ async function notFound(req: Request, env: Env, url: URL): Promise<Response> {
       log("not_found_page_failed")(e);
     }
   }
-  return new Response("not found", { status: 404 });
+  return plain("not found", 404);
 }
 
 export default {
@@ -74,22 +76,25 @@ export default {
     // Telegram -> us. Only accept calls that carry our shared secret.
     if (url.pathname === "/webhook" && req.method === "POST") {
       const secret = req.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
-      if (!env.WEBHOOK_SECRET || !safeEqual(secret, env.WEBHOOK_SECRET)) return new Response("forbidden", { status: 403 });
+      if (!env.WEBHOOK_SECRET || !safeEqual(secret, env.WEBHOOK_SECRET)) return plain("forbidden", 403);
       let update: TgUpdate;
       try {
         update = (await req.json()) as TgUpdate;
       } catch {
-        return new Response("bad request", { status: 400 });
+        return plain("bad request", 400);
       }
       // Answer Telegram immediately; do the work in the background so Telegram never retries.
       ctx.waitUntil(handleUpdate(env, update));
-      return new Response("ok");
+      return plain("ok");
     }
 
     // One-time setup: open  https://<your-worker>/setup?key=<WEBHOOK_SECRET>  in a browser.
     if (url.pathname === "/setup") {
       const key = url.searchParams.get("key") ?? "";
-      if (!env.WEBHOOK_SECRET || !safeEqual(key, env.WEBHOOK_SECRET)) return new Response("forbidden", { status: 403 });
+      // The key travels in a URL (browser history, request logs). With SETUP_KEY set it is a separate, low-value
+      // secret; without it, it is the webhook secret, as before.
+      const expected = env.SETUP_KEY || env.WEBHOOK_SECRET;
+      if (!expected || !env.WEBHOOK_SECRET || !safeEqual(key, expected)) return plain("forbidden", 403);
       const tg = new Telegram(env);
       const hook = `${url.origin}/webhook`;
       // Optional: &menu=app puts the mini app on the button next to the message box; &menu=commands puts the command list back.
@@ -115,7 +120,7 @@ export default {
       return json({ ok: true, webhook: hook, commands: "set (en, ms, zh)", miniApp: miniApp ?? "not available (needs HTTPS)", menuButton });
     }
 
-    if (url.pathname === "/") return new Response("SkyBrief is running ☀️");
+    if (url.pathname === "/") return plain("SkyBrief is running ☀️");
     return notFound(req, env, url);
   },
 

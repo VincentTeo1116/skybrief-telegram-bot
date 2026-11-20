@@ -23,6 +23,10 @@ concurrency:
   group: deploy
   cancel-in-progress: false   # never interrupt a deploy that is already running
 
+# The job only needs to read the code. Without this line it would get the repository's default token rights.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

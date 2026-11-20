@@ -4,9 +4,13 @@
 # style-src    our own stylesheet only. No inline styles (the page sets dynamic values through the CSSOM).
 # font-src     the app's own font files in /fonts/ only.
 # connect-src  the page only ever talks to this Worker's /api/.
+# Strict-Transport-Security  browsers must always use HTTPS for this site.
+# Cross-Origin-Resource-Policy  other sites can't load our files into their pages.
 # frame-ancestors  Telegram's web client shows mini apps in a frame; nobody else may frame the page.
 /*
   Content-Security-Policy: default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors https://web.telegram.org; base-uri 'none'; form-action 'none'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Resource-Policy: same-origin
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: camera=(), microphone=(), geolocation=(self), payment=()

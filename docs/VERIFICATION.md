@@ -132,6 +132,10 @@ Screenshots viewed: haze dashboard, a day's hour strip, the saved-places list wi
 
 Test changes worth knowing: the "app shell + dashboard under 140 KB" check was split into "shell under 135 KB" and "dashboard under 45 KB"; the old combined limit was exceeded by the hourly data, not by a regression.
 
+## Security assessment (20 Nov 2026)
+
+See `docs/SECURITY-ASSESSMENT.md`: 19 automated attack tests and a design review. Three weaknesses were found by the tests and fixed (a non-language accepted as a language, missing HSTS and `nosniff`, bodies read before the size check), plus two by review (the `/setup` key, secret comparison). Two Medium items need owner action (rotate the webhook secret behind a separate setup key; add rate limiting in Cloudflare).
+
 ## Not verified
 
 * **Inside a real Telegram client.** The page was driven with a stand-in for Telegram's script. Real `initData`, the back

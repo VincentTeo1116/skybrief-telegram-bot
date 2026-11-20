@@ -3,6 +3,11 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   /** Shared secret: Telegram sends it with every webhook call, and it protects /setup. */
   WEBHOOK_SECRET: string;
+  /**
+   * Optional: a separate key for /setup. When set, /setup accepts ONLY this, so the webhook secret (which would let
+   * its holder speak as Telegram) never has to be typed into a browser address bar.
+   */
+  SETUP_KEY?: string;
   /** Comma-separated Telegram user IDs that administer the bot. */
   ADMIN_IDS?: string;
   WAQI_TOKEN?: string;

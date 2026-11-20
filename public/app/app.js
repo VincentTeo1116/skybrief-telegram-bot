@@ -669,7 +669,7 @@ async function switchPlace(index) {
 
 // ---------------------------------------------------------------- sheets (dialogs)
 function openSheet(sheet, opener) {
-  if (activeSheet) closeSheet();
+  if (activeSheet && activeSheet !== sheet) closeSheet(activeSheet); // one sheet at a time (e.g. the guide opened from Settings)
   activeSheet = sheet;
   sheetOpener = opener || null;
   for (const x of sheet.querySelectorAll("[data-close]")) x.setAttribute("aria-label", S.app_close || "Close");
@@ -682,17 +682,29 @@ function openSheet(sheet, opener) {
   }
 }
 
-function closeSheet() {
-  const sheet = activeSheet;
+/**
+ * Close a sheet: the one given, else the one we believe is open, else whichever dialog really is open.
+ * The last step means a close button can never be left doing nothing, whatever the bookkeeping says.
+ * (Also used directly as a click / back-button handler, where the argument is an event or nothing.)
+ */
+function closeSheet(which) {
+  const given = which && which.tagName === "DIALOG" ? which : null;
+  const sheet = given || activeSheet || document.querySelector("dialog.sheet[open]");
   if (!sheet) return;
   if (sheet.close) sheet.close();
   else {
     sheet.removeAttribute("open");
-    onSheetClosed();
+    onSheetClosed({ target: sheet });
   }
 }
 
-function onSheetClosed() {
+/**
+ * A dialog's "close" event arrives a moment AFTER close() is called. When one sheet replaces another, the old
+ * sheet's late event must not clear the record of the new one, or the new sheet's buttons would stop working.
+ */
+function onSheetClosed(event) {
+  const closed = event && event.target;
+  if (closed && closed !== activeSheet) return;
   activeSheet = null;
   try {
     if (inTelegram && tg.BackButton) tg.BackButton.hide();
@@ -1115,15 +1127,15 @@ function start() {
   $("share-btn").addEventListener("click", openShare);
   $("gps-btn").addEventListener("click", useMyLocation);
   $("share-send").addEventListener("click", sendShare);
-  $("tips-ok").addEventListener("click", closeSheet);
+  $("tips-ok").addEventListener("click", () => closeSheet($("tips")));
   $("search-form").addEventListener("submit", searchPlaces);
   for (const sheet of document.querySelectorAll("dialog.sheet")) {
     sheet.addEventListener("close", onSheetClosed);
+    // every sheet's own controls close THAT sheet, not "whichever one we think is open"
     sheet.addEventListener("click", (e) => {
-      if (e.target === sheet) closeSheet(); // a tap on the dimmed area outside the sheet
+      if (e.target === sheet) closeSheet(sheet); // a tap on the dimmed area outside the sheet
     });
-    const x = sheet.querySelector("[data-close]");
-    if (x) x.addEventListener("click", closeSheet);
+    for (const x of sheet.querySelectorAll("[data-close]")) x.addEventListener("click", () => closeSheet(sheet));
   }
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && dash && Date.now() - loadedAt > REFRESH_AFTER_MS) load();

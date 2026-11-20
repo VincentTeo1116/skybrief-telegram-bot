@@ -610,3 +610,90 @@ test("FR-22 storage blocked: no guide at all, rather than the guide on every vis
   await expect(page.locator("#place-btn")).toBeEnabled();
   expect(errors).toEqual([]);
 });
+
+test("FR-22 the guide opened from Settings closes with 'Got it' and with the close button", async ({ page }) => {
+  await openApp(page, { userId: ACTIVE });
+  await ready(page);
+  for (const how of ["#tips-ok", "#tips [data-close]"]) {
+    await page.locator("#settings-btn").click();
+    await page.locator("#tips-again").click();
+    await expect(page.locator("#tips")).toBeVisible();
+    await page.waitForTimeout(300); // let the Settings sheet finish closing behind it
+    await page.locator(how).click();
+    await expect(page.locator("#tips"), how).toBeHidden();
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+  }
+  // and the dashboard is usable again afterwards
+  await page.locator("#settings-btn").click();
+  await expect(page.locator("#settings")).toBeVisible();
+  await page.locator("#settings [data-close]").click();
+  await expect(page.locator("#settings")).toBeHidden();
+});
+
+test("every sheet closes by its close button, by a tap outside, by Escape and by Telegram's back button", async ({ page }) => {
+  const errors = await openApp(page, { userId: ACTIVE });
+  await ready(page);
+  const sheets = [
+    { open: "#place-btn", sheet: "#sheet" },
+    { open: "#settings-btn", sheet: "#settings" },
+    { open: "#share-btn", sheet: "#share" },
+  ];
+  const ways: Record<string, (sheet: string) => Promise<void>> = {
+    "close button": async (sheet) => page.locator(`${sheet} [data-close]`).click(),
+    "tap outside": async () => page.mouse.click(8, 8),
+    Escape: async () => page.keyboard.press("Escape"),
+    "Telegram's back button": async () => page.evaluate(() => (window as any).__tg.pressBack()),
+  };
+  for (const s of sheets) {
+    for (const [name, close] of Object.entries(ways)) {
+      await page.locator(s.open).click();
+      await expect(page.locator(s.sheet), `${s.sheet} opens`).toBeVisible();
+      expect(await page.evaluate(() => (window as any).__tg.back), "back button shown").toBe(true);
+      await close(s.sheet);
+      await expect(page.locator(s.sheet), `${s.sheet} closes by ${name}`).toBeHidden();
+      await expect(page.locator("dialog[open]")).toHaveCount(0);
+      expect(await page.evaluate(() => (window as any).__tg.back), `back button hidden after ${name}`).toBe(false);
+      await expect(page.locator(s.open), "focus returns to the button that opened it").toBeFocused();
+    }
+  }
+  // the guide on its own, each way
+  for (const how of ["#tips-ok", "#tips [data-close]"]) {
+    await page.locator("#settings-btn").click();
+    await page.locator("#tips-again").click();
+    await expect(page.locator("#tips")).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => (window as any).__tg.back), "back button still shown for the guide").toBe(true);
+    await page.locator(how).click();
+    await expect(page.locator("#tips")).toBeHidden();
+    expect(await page.evaluate(() => (window as any).__tg.back)).toBe(false);
+  }
+  // opening and closing sheets quickly one after another never leaves one stuck
+  for (let i = 0; i < 3; i++) {
+    await page.locator("#settings-btn").click();
+    await page.locator("#tips-again").click();
+    await page.locator("#tips-ok").click();
+    await page.locator("#share-btn").click();
+    await page.locator("#share [data-close]").click();
+  }
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("the first-time guide closes with 'Got it', the close button, a tap outside and Escape", async ({ page }) => {
+  for (const how of ["ok", "x", "outside", "escape"]) {
+    await page.goto("about:blank");
+    await page.evaluate(() => undefined);
+    await openApp(page, { userId: ACTIVE, firstTime: true });
+    await ready(page);
+    await page.evaluate(() => localStorage.removeItem("skybrief.tips.v1"));
+    await page.reload();
+    await ready(page);
+    await expect(page.locator("#tips"), how).toBeVisible();
+    if (how === "ok") await page.locator("#tips-ok").click();
+    else if (how === "x") await page.locator("#tips [data-close]").click();
+    else if (how === "outside") await page.mouse.click(8, 8);
+    else await page.keyboard.press("Escape");
+    await expect(page.locator("#tips"), how).toBeHidden();
+    await expect(page.locator("#place-btn")).toBeEnabled();
+  }
+});

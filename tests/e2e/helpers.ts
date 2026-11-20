@@ -77,7 +77,7 @@ export async function openApp(page: Page, o: OpenOptions = {}): Promise<string[]
           setBackgroundColor: noop,
           setBottomBarColor: noop,
           HapticFeedback: { impactOccurred: noop, notificationOccurred: noop },
-          BackButton: { show: () => ((window as any).__tg.back = true), hide: () => ((window as any).__tg.back = false), onClick: noop, offClick: noop },
+          BackButton: { show: () => ((window as any).__tg.back = true), hide: () => ((window as any).__tg.back = false), onClick: (cb: () => void) => ((window as any).__tg.pressBack = cb), offClick: noop },
         },
       };
     },

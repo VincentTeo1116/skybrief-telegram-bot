@@ -23,6 +23,8 @@ export interface SavedPlace {
   /** As stored on the user: a Malaysian state, '' (Malaysia, not known yet) or '-' (not Malaysia). */
   region: string;
   district: string;
+  /** The person's "home": always listed first and never pushed out by newer places. At most one. */
+  home?: boolean;
 }
 
 const samePlace = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => Math.abs(a.lat - b.lat) < 0.005 && Math.abs(a.lon - b.lon) < 0.005;
@@ -43,9 +45,16 @@ function storedPlaces(u: User): SavedPlace[] {
     if (!p || typeof p.name !== "string" || !p.name || typeof p.lat !== "number" || typeof p.lon !== "number" || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) continue;
     if (typeof p.tz !== "string" || !p.tz) continue;
     if (out.some((x) => samePlace(x, p as unknown as SavedPlace))) continue;
-    out.push({ name: p.name.slice(0, 80), lat: p.lat, lon: p.lon, country: String(p.country ?? ""), tz: p.tz, region: String(p.region ?? ""), district: String(p.district ?? "") });
+    const home = p.home === true && !out.some((x) => x.home); // only the first one marked counts
+    out.push({ name: p.name.slice(0, 80), lat: p.lat, lon: p.lon, country: String(p.country ?? ""), tz: p.tz, region: String(p.region ?? ""), district: String(p.district ?? ""), ...(home ? { home: true } : {}) });
   }
-  return out.slice(0, MAX_PLACES);
+  return tidy(out);
+}
+
+/** Home first, then the rest in their order; at most MAX_PLACES, and the home place is never the one dropped. */
+function tidy(list: SavedPlace[]): SavedPlace[] {
+  const home = list.find((p) => p.home);
+  return (home ? [home, ...list.filter((p) => p !== home)] : list).slice(0, MAX_PLACES);
 }
 
 /**
@@ -56,20 +65,21 @@ function storedPlaces(u: User): SavedPlace[] {
 export function savedPlaces(u: User): SavedPlace[] {
   const list = storedPlaces(u);
   if (list.some((p) => samePlace(p, u))) return list;
-  return [activeOf(u), ...list].slice(0, MAX_PLACES);
+  return tidy([activeOf(u), ...list]);
 }
 
 export const isActivePlace = (u: User, p: SavedPlace) => samePlace(u, p);
 
-/** Put `p` at the front (newest first), without duplicates, keeping at most MAX_PLACES. */
+/** Put `p` at the front (newest first, after the home place), without duplicates, keeping at most MAX_PLACES. */
 function remember(list: SavedPlace[], p: SavedPlace): SavedPlace[] {
-  return [p, ...list.filter((x) => !samePlace(x, p))].slice(0, MAX_PLACES);
+  const wasHome = list.some((x) => x.home && samePlace(x, p));
+  return tidy([wasHome ? { ...p, home: true } : p, ...list.filter((x) => !samePlace(x, p))]);
 }
 
 /** Make sure the active place is in the stored list under its current name (after a rename, or for older rows). */
 export async function syncActivePlace(env: Env, u: User): Promise<User> {
   const active = activeOf(u);
-  const list = savedPlaces(u).map((p) => (samePlace(p, active) ? active : p));
+  const list = savedPlaces(u).map((p) => (samePlace(p, active) ? { ...active, ...(p.home ? { home: true } : {}) } : p));
   return patchUser(env.DB, u.chatId, { placesJson: JSON.stringify(list) });
 }
 
@@ -116,6 +126,31 @@ export async function forgetPlace(env: Env, user: User, index: number): Promise<
   const p = list[index];
   if (!p || samePlace(p, user)) return null;
   return patchUser(env.DB, user.chatId, { placesJson: JSON.stringify(list.filter((_, i) => i !== index)) });
+}
+
+export type PlaceEdit = "home" | "unhome" | "up";
+
+/**
+ * Rearrange the saved places: mark one as home (it moves to the front), take the mark away, or move one up a step.
+ * Null = that change isn't possible (unknown index, already first, would jump over the home place, ...).
+ */
+export async function editPlace(env: Env, user: User, index: number, action: PlaceEdit): Promise<User | null> {
+  const list = savedPlaces(user);
+  const p = list[index];
+  if (!p) return null;
+  let next: SavedPlace[];
+  if (action === "home") {
+    if (p.home) return null;
+    next = tidy(list.map((x, i) => ({ ...x, home: i === index ? true : undefined })));
+  } else if (action === "unhome") {
+    if (!p.home) return null;
+    next = list.map((x) => ({ ...x, home: undefined }));
+  } else {
+    if (index === 0 || list[index - 1].home) return null; // home stays first
+    next = [...list];
+    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+  }
+  return patchUser(env.DB, user.chatId, { placesJson: JSON.stringify(next) });
 }
 
 /** The user's saved place, renamed into `lang` when that can be done reliably. */

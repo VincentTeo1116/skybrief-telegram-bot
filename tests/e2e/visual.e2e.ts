@@ -12,6 +12,7 @@ const SCENES = [
   { demo: "windy", sky: "windy-day" },
   { demo: "storm", sky: "storm-day" },
   { demo: "night", sky: "clear-night" },
+  { demo: "haze", sky: "partly-day" },
 ] as const;
 
 for (const s of SCENES) {

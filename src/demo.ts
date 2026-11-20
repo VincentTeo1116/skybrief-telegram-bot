@@ -11,7 +11,7 @@ import { localParts } from "./util";
 import type { IpuReading } from "./ipu";
 import { warningId, type State, type Warning } from "./warnings";
 
-export const DEMO_SCENES = ["sunny", "cloudy", "rainy", "windy", "storm", "night"] as const;
+export const DEMO_SCENES = ["sunny", "cloudy", "rainy", "windy", "storm", "night", "haze"] as const;
 export type DemoScene = (typeof DEMO_SCENES)[number];
 
 export const isDemoScene = (s: string | null): s is DemoScene => (DEMO_SCENES as readonly string[]).includes(s ?? "");
@@ -38,6 +38,7 @@ const SPECS: Record<DemoScene, Spec> = {
   windy: { hour: 15, code: 2, temp: 29, feels: 30, wind: 34, gusts: 56, cloud: 45, precip: 0, prob: 15, humidity: 66, aqi: 55 },
   storm: { hour: 17, code: 95, temp: 24, feels: 26, wind: 22, gusts: 48, cloud: 100, precip: 6.5, prob: 95, humidity: 95, aqi: 112, measured: true },
   night: { hour: 21, code: 0, temp: 26, feels: 29, wind: 6, gusts: 11, cloud: 5, precip: 0, prob: 5, humidity: 84, aqi: 62 },
+  haze: { hour: 11, code: 1, temp: 32, feels: 36, wind: 5, gusts: 9, cloud: 20, precip: 0, prob: 5, humidity: 62, aqi: 168, measured: true },
 };
 
 /** What the days after today look like (a typical mixed week). */

@@ -20,6 +20,7 @@ const TIMEOUT_MS = 12000;
 const GPS_TIMEOUT_MS = 15000;
 const CACHE_KEY = `skybrief.dash.v2.${tgUser && tgUser.id ? tgUser.id : "anon"}`;
 const DAYS_KEY = "skybrief.days";
+const TIPS_KEY = "skybrief.tips.v1";
 const SVG = "http://www.w3.org/2000/svg";
 const AQI_STEPS = [0, 50, 100, 150, 200, 300, 500];
 const HTML_LANG = { en: "en", ms: "ms", zh: "zh-Hans" };
@@ -194,6 +195,7 @@ function paintChrome() {
 // ---------------------------------------------------------------- render: the sky and the header
 function renderHero(d) {
   $("hero").dataset.sky = `${d.scene.kind}-${d.scene.night ? "night" : "day"}`;
+  $("hero").dataset.haze = String(d.scene.haze || 0);
   $("page-title").textContent = d.title;
   $("place-name").textContent = d.place;
   $("place-btn").setAttribute("aria-label", `${d.place}. ${S.app_change_city}`);
@@ -226,7 +228,7 @@ function renderHero(d) {
   chips.setAttribute("aria-label", S.app_places);
   chips.replaceChildren(
     ...(many ? d.places : []).map((p, i) => {
-      const b = el("button", { type: "button", class: "chip", "aria-pressed": String(!!p.active), text: p.name });
+      const b = el("button", { type: "button", class: "chip", "aria-pressed": String(!!p.active) }, p.home && icon("home", "ico", S.app_home), el("span", { class: "chip-text", text: p.name }));
       if (!p.active) b.addEventListener("click", () => switchPlace(i));
       return el("li", null, b);
     }),
@@ -273,7 +275,7 @@ function warningsCard(d) {
  * own row below. Every point sits exactly above its hour's column, whose own text gives the exact value, so the
  * drawing itself is decoration for assistive technology. Returns null when there are too few known temperatures.
  */
-function hourChart(hours) {
+function hourChart(hours, id) {
   const points = hours.map((h, i) => ({ i, t: h.t })).filter((p) => typeof p.t === "number" && Number.isFinite(p.t));
   if (points.length < 2) return null;
   const COL = 100;
@@ -292,21 +294,21 @@ function hourChart(hours) {
     const p3 = xy[Math.min(xy.length - 1, k + 2)];
     line += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)} ${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)} ${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0]} ${p2[1].toFixed(1)}`;
   }
-  const svg = svgEl("svg", { class: "chart", id: "hour-chart", viewBox: `0 0 ${hours.length * COL} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true", focusable: "false" });
+  const svg = svgEl("svg", { class: "chart", viewBox: `0 0 ${hours.length * COL} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true", focusable: "false" });
   svg.append(
     svgEl("path", { class: "chart-area", d: `${line} L${xy[xy.length - 1][0]} ${H} L${xy[0][0]} ${H} Z` }),
     svgEl("path", { class: "chart-line", d: line, "vector-effect": "non-scaling-stroke" }),
   );
+  if (id) svg.id = id;
   return svg;
 }
 
-const RAIN_ICON = { now: "water", likely: "water", chance: "water", none: "check" };
-
-function hourlyCard(d) {
+/** A row of hours that scrolls sideways, with the temperature line above it. Used for "next 24 hours" and for any day. */
+function hourStrip(hours, label, ids = {}) {
   const list = el(
     "ul",
-    { class: "hours", id: "hours", role: "list" },
-    d.hourly.map((x) => {
+    { class: "hours", role: "list", id: ids.list },
+    hours.map((x) => {
       const meter = el("span", { class: "hour-meter", "aria-hidden": "true" }, el("span"));
       meter.firstChild.style.setProperty("--size", `${Math.max(0, Math.min(100, x.prob))}%`);
       return el(
@@ -320,7 +322,13 @@ function hourlyCard(d) {
       );
     }),
   );
-  const scroller = el("div", { class: "hours-scroll", id: "hours-scroll", tabindex: "0", role: "group", "aria-label": S.app_hourly }, el("div", { class: "hours-inner" }, hourChart(d.hourly), list));
+  return el("div", { class: "hours-scroll", id: ids.scroll, tabindex: "0", role: "group", "aria-label": label }, el("div", { class: "hours-inner" }, hourChart(hours, ids.chart), list));
+}
+
+const RAIN_ICON = { now: "water", likely: "water", chance: "water", none: "check" };
+
+function hourlyCard(d) {
+  const scroller = hourStrip(d.hourly, S.app_hourly, { list: "hours", scroll: "hours-scroll", chart: "hour-chart" });
   const line = el("p", { class: "rainline", id: "rainline", data: { level: d.rain.level } }, icon(RAIN_ICON[d.rain.level] || "water"), el("span", { text: d.rain.text }));
   const section = card(S.rain_title, "span2", line, el("h3", { class: "card-title block-title", text: S.app_hourly }), scroller);
   section.id = "hourly";
@@ -411,6 +419,7 @@ function dayDetail(x, id) {
           ),
         ),
       ),
+    Array.isArray(t.hours) && t.hours.length > 1 && hourStrip(t.hours, fill(S.app_day_hours, { d: x.label })),
     facts.length > 0 && el("ul", { class: "facts", role: "list" }, facts.map((f) => el("li", { text: f }))),
     Array.isArray(t.tips) && t.tips.length > 0 && el("ul", { class: "tips", role: "list" }, t.tips.map((tip) => el("li", { text: tip }))),
   );
@@ -625,7 +634,7 @@ async function load({ fresh = false } = {}) {
     if (fresh) {
       toast(S.app_updated);
       haptic("success");
-    }
+    } else maybeShowTips();
   } catch (e) {
     if (refused(e)) refuse(e);
     else if (e && e.status === 400) gate(e.userMessage || boot.offline);
@@ -722,11 +731,17 @@ function renderSavedPlaces() {
     ...list.map((p, i) => {
       const main = el("button", { type: "button", class: "choice", data: { off: !!p.active }, disabled: !!p.active }, icon("pin"), el("span", { class: "choice-text", text: p.label }), p.active && el("span", { class: "tag", text: S.app_place_current }));
       if (!p.active) main.addEventListener("click", () => savePlace({ saved: i }));
+      const home = el("button", { type: "button", class: "icon-btn", "aria-pressed": String(!!p.home), "aria-label": fill(p.home ? S.app_place_unhome : S.app_place_home, { p: p.name }) }, icon("home"));
+      home.addEventListener("click", () => editPlace(i, p.home ? "unhome" : "home"));
+      const canMoveUp = i > 0 && !list[i - 1].home && !p.home;
+      const up = canMoveUp && el("button", { type: "button", class: "icon-btn", "aria-label": fill(S.app_place_up, { p: p.name }) }, icon("arrow"));
+      if (up) up.addEventListener("click", () => editPlace(i, "up"));
       const remove = !p.active && el("button", { type: "button", class: "icon-btn", "aria-label": fill(S.app_place_remove, { p: p.name }) }, icon("close"));
       if (remove) remove.addEventListener("click", () => removePlace(i));
-      return el("li", { class: "saved-row" }, main, remove);
+      return el("li", { class: "saved-row" }, main, el("span", { class: "saved-actions" }, home, up, remove));
     }),
   );
+  $("saved-hint").textContent = S.app_places_hint;
 }
 
 function openLocation() {
@@ -800,6 +815,26 @@ async function removePlace(index) {
     setStatus("sheet-status", S.app_place_removed);
   } catch (e) {
     if (refused(e)) return refuse(e);
+    setStatus("sheet-status", (e && e.userMessage) || S.app_err_save, "error");
+  } finally {
+    lock($("sheet"), false);
+  }
+}
+
+/** Mark a saved place as home, take the mark away, or move it up one step (FR-20). */
+async function editPlace(index, action) {
+  setStatus("sheet-status", S.app_working);
+  lock($("sheet"), true);
+  try {
+    const d = await api("/api/app/place/edit", { method: "POST", body: { saved: index, action } });
+    if (!isDashboard(d)) throw Object.assign(new Error("unexpected answer"), { code: "bad_response" });
+    if (!accept(d)) return;
+    renderSavedPlaces();
+    setStatus("sheet-status", S.app_set_saved, "ok");
+    haptic("tap");
+  } catch (e) {
+    if (refused(e)) return refuse(e);
+    renderSavedPlaces(); // back to what is really saved
     setStatus("sheet-status", (e && e.userMessage) || S.app_err_save, "error");
   } finally {
     lock($("sheet"), false);
@@ -922,6 +957,9 @@ function renderSettings(focusKey) {
       settingRow(S.app_set_warnings, S.app_set_warnings_hint, switchControl(S.app_set_warnings, "warningsOn", s.warningsAvailable && s.warningsOn, s.warningsAvailable)),
     ),
   );
+  const tipsAgain = el("button", { type: "button", class: "btn btn-wide", id: "tips-again" }, icon("info"), el("span", { text: S.app_tips_again }));
+  tipsAgain.addEventListener("click", () => openTips($("settings-btn")));
+  $("settings-body").append(el("section", { class: "set-group" }, tipsAgain));
   if (focusKey) {
     const again = [...$("settings-body").querySelectorAll("[data-focus]")].find((n) => n.dataset.focus === focusKey);
     if (again && !again.disabled) again.focus();
@@ -960,6 +998,27 @@ async function saveSettings(change, focusKey) {
   } finally {
     lock(sheet, false);
   }
+}
+
+// ---------------------------------------------------------------- first-time tips (FR-22)
+function openTips(opener) {
+  if (!dash) return;
+  $("tips-title").textContent = S.app_tips_title;
+  $("tips-ok").textContent = S.app_tips_ok;
+  const rows = [["pin", S.app_tip_place], ["sliders", S.app_tip_settings], ["chevron", S.app_tip_day], ["share", S.app_tip_share]];
+  $("tips-list").replaceChildren(...rows.map(([name, text]) => el("li", { class: "tip-row" }, el("span", { class: "tip-ico" }, icon(name)), el("span", { text }))));
+  openSheet($("tips"), opener || $("place-btn"));
+}
+
+/**
+ * Show the short guide once per device, the first time real data is on screen. If this device can't remember that
+ * it was shown (storage blocked), it is not shown at all: better never than every single time.
+ */
+function maybeShowTips() {
+  if (!dash || dash.demo || activeSheet || store.get(TIPS_KEY)) return;
+  store.set(TIPS_KEY, "1");
+  if (store.get(TIPS_KEY) !== "1") return;
+  openTips();
 }
 
 // ---------------------------------------------------------------- share a picture card (FR-18)
@@ -1056,6 +1115,7 @@ function start() {
   $("share-btn").addEventListener("click", openShare);
   $("gps-btn").addEventListener("click", useMyLocation);
   $("share-send").addEventListener("click", sendShare);
+  $("tips-ok").addEventListener("click", closeSheet);
   $("search-form").addEventListener("submit", searchPlaces);
   for (const sheet of document.querySelectorAll("dialog.sheet")) {
     sheet.addEventListener("close", onSheetClosed);

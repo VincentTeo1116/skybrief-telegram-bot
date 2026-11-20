@@ -150,9 +150,14 @@ export function approvalKeyboard(chatId: number): Markup {
   return { inline_keyboard: [[btn("✅ Approve", `adm:ok:${chatId}`), btn("⛔ Deny", `adm:no:${chatId}`)]] };
 }
 
-/** Buttons under a proactive alert: mute that kind of alert, or open the full report. */
-export function alertKeyboard(kind: "rain" | "aqi" | "warn", lang: Lang): Markup {
-  return { inline_keyboard: [[btn(t(lang, "b_mute"), `mute:${kind}`)], [btn(t(lang, "b_report"), "v:now")]] };
+/** Buttons under a proactive alert: mute that kind of alert, open the full report, or (when its address is known) the dashboard. */
+export function alertKeyboard(kind: "rain" | "aqi" | "warn", lang: Lang, appUrl?: string | null): Markup {
+  return { inline_keyboard: [[btn(t(lang, "b_mute"), `mute:${kind}`)], afterAlertRow(lang, appUrl)] };
+}
+
+/** What stays under an alert once it has been muted. */
+export function afterAlertRow(lang: Lang, appUrl?: string | null) {
+  return [btn(t(lang, "b_report"), "v:now"), ...(appUrl ? [appButton(lang, appUrl)] : [])];
 }
 
 /** Confirm / cancel under a broadcast preview (admin only). */

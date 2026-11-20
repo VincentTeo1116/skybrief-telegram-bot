@@ -386,7 +386,7 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
       const kind = data.slice(5);
       const patch: UserPatch = kind === "rain" ? { rainAlerts: false } : kind === "aqi" ? { aqiAlert: 0, aqiAlertActive: false } : kind === "warn" ? { warningsOn: false } : {};
       if (Object.keys(patch).length) await patchUser(c.env.DB, chatId, patch);
-      await quiet(c.tg.editReplyMarkup(chatId, msg.message_id, { inline_keyboard: [[{ text: t(lang, "b_report"), callback_data: "v:now" }]] }));
+      await quiet(c.tg.editReplyMarkup(chatId, msg.message_id, { inline_keyboard: [kb.afterAlertRow(lang, c.appUrl)] }));
       await ack(t(lang, "toast_muted"));
     } else if (data.startsWith("pre:")) {
       await ack(t(lang, "toast_switch"));

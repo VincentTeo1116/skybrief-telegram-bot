@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { demoReport } from "../src/demo";
 import { IPU_MAX_KM, ipuBand, nearestIpu, parseIpu, type IpuStation } from "../src/ipu";
 import { MAX_PLACES, activeOf, isActivePlace, savedPlaces } from "../src/location";
-import { buildDashboard, settingsView } from "../src/miniapp";
+import { afterAlertRow, alertKeyboard } from "../src/keyboards";
+import { buildDashboard, hazeOf, settingsView } from "../src/miniapp";
 import { parseSettingsChange, settingsPatch } from "../src/settings";
 import { MODEL_AQ, P, makeReport, makeUser } from "./fixtures";
 
@@ -112,8 +113,8 @@ describe("saved places", () => {
     const u = makeUser({ placesJson: JSON.stringify([ipoh]) });
     const d = buildDashboard(makeReport(MODEL_AQ), P(), [], { user: u });
     expect(d.places).toEqual([
-      { name: "Kuala Lumpur", label: "Kuala Lumpur, Malaysia", active: true },
-      { name: "Ipoh", label: "Ipoh, Malaysia", active: false },
+      { name: "Kuala Lumpur", label: "Kuala Lumpur, Malaysia", active: true, home: false },
+      { name: "Ipoh", label: "Ipoh, Malaysia", active: false, home: false },
     ]);
     expect(buildDashboard(makeReport(MODEL_AQ), P()).places).toEqual([]);
   });
@@ -222,5 +223,77 @@ describe("day details and the hourly chart's numbers", () => {
     const demo = demoReport("storm", "en", NOW);
     expect(demo.ipu).toMatchObject({ name: "Cheras", value: 95 });
     expect(buildDashboard(demo.report, P(), demo.warnings, { demo: true, ipu: demo.ipu })).toMatchObject({ demo: true, ipu: { value: 95, level: 1 } });
+  });
+});
+
+// ------------------------------------------------------------------ v2.5: FR-19 .. FR-23
+describe("v2.5: a day hour by hour, home place, haze, alerts", () => {
+  const d = buildDashboard(makeReport(MODEL_AQ), P());
+
+  it("FR-19 every future day carries its 24 hours; today leaves that to the 'next 24 hours' strip", () => {
+    expect(d.daily[0].detail.hours).toEqual([]);
+    for (const day of d.daily.slice(1)) expect(day.detail.hours).toHaveLength(24);
+    const tomorrow = d.daily[1].detail.hours;
+    expect(tomorrow[0]).toEqual({ label: "12 AM", icon: "partly-night", cond: "Partly cloudy", temp: "26°", t: 26, prob: 10 });
+    expect(tomorrow[12]).toMatchObject({ label: "12 PM", icon: "partly-day", temp: "32°", t: 32 });
+    expect(tomorrow[23].label).toBe("11 PM");
+    const f = buildDashboard(makeReport(MODEL_AQ), P("zh", { tempUnit: "f", clock: "24" })).daily[1].detail.hours;
+    expect(f[12]).toMatchObject({ label: "12:00", temp: "90°", t: 89.6, cond: "局部多云" });
+  });
+
+  it("FR-19 a day with no hourly data simply has no strip", () => {
+    const r = makeReport(MODEL_AQ);
+    const cut = r.wx.hourly.time.findIndex((x) => x.startsWith(r.wx.daily.time[3]));
+    for (const key of Object.keys(r.wx.hourly) as (keyof typeof r.wx.hourly)[]) (r.wx.hourly[key] as unknown[]).length = cut; // the backup source can be shorter
+    const short = buildDashboard(r, P());
+    expect(short.daily[1].detail.hours).toHaveLength(24);
+    expect(short.daily[2].detail.hours).toEqual([]);
+    expect(short.daily[2].detail.best).toBeNull();
+    expect(short.daily).toHaveLength(7); // the daily rows themselves are unaffected
+  });
+
+  it("FR-20 the home place is listed first, kept when the list is full, and there is only one", () => {
+    const place = (name: string, i: number, home?: boolean) => ({ name, lat: 1 + i, lon: 100 + i, country: "Malaysia", tz: "Asia/Kuala_Lumpur", region: "", district: "", ...(home ? { home: true } : {}) });
+    const list = [place("A", 1), place("B", 2), place("Home", 3, true), place("C", 4), place("Second home", 5, true)];
+    const u = makeUser({ lat: 2, lon: 101, placeName: "A", placesJson: JSON.stringify(list) });
+    const seen = savedPlaces(u);
+    expect(seen.map((p) => p.name)).toEqual(["Home", "A", "B", "C", "Second home"]);
+    expect(seen.filter((p) => p.home).map((p) => p.name)).toEqual(["Home"]);
+    // seven stored: the cut drops from the end, never the home
+    const many = [...Array.from({ length: 6 }, (_, i) => place(`P${i}`, 10 + i)), place("Home", 3, true)];
+    const full = savedPlaces(makeUser({ lat: 11, lon: 110, placeName: "P0", placesJson: JSON.stringify(many) }));
+    expect(full).toHaveLength(MAX_PLACES);
+    expect(full[0]).toMatchObject({ name: "Home", home: true });
+    const dash = buildDashboard(makeReport(MODEL_AQ), P(), [], { user: u });
+    expect(dash.places[0]).toEqual({ name: "Home", label: "Home, Malaysia", active: false, home: true });
+    expect(dash.places[1]).toMatchObject({ name: "A", active: true, home: false });
+  });
+
+  it("FR-21 haze follows the air: light from 101, heavy from 151 or an official IPU above 100", () => {
+    expect([0, 50, 100, 101, 150, 151, 300].map((aqi) => hazeOf(aqi, null))).toEqual([0, 0, 0, 1, 1, 2, 2]);
+    expect(hazeOf(60, 100)).toBe(0);
+    expect(hazeOf(60, 101)).toBe(2);
+    expect(hazeOf(null, 150)).toBe(2);
+    expect([hazeOf(null, null), hazeOf(undefined, undefined)]).toEqual([0, 0]); // no reading: no haze is claimed
+    expect(buildDashboard(makeReport(MODEL_AQ), P()).scene.haze).toBe(0);
+    expect(buildDashboard(makeReport({ ...MODEL_AQ, aqi: 120 }), P()).scene.haze).toBe(1);
+    expect(buildDashboard(makeReport({ ...MODEL_AQ, aqi: 170 }), P()).scene).toMatchObject({ kind: "partly", haze: 2 }); // the weather scene itself is unchanged
+    expect(buildDashboard(makeReport(null), P()).scene.haze).toBe(0);
+    const demo = demoReport("haze", "en", NOW);
+    expect(buildDashboard(demo.report, P(), [], { demo: true, ipu: demo.ipu }).scene).toMatchObject({ kind: "partly", haze: 2 });
+  });
+
+  it("FR-23 alerts carry the dashboard button when its address is known, and keep it after muting", () => {
+    const rows = (m: any) => m.inline_keyboard as any[][];
+    for (const kind of ["rain", "aqi", "warn"] as const) {
+      const plain = rows(alertKeyboard(kind, "en"));
+      expect(plain).toEqual([[{ text: "🔕 Mute these alerts", callback_data: `mute:${kind}` }], [{ text: "📋 Full report", callback_data: "v:now" }]]);
+      expect(rows(alertKeyboard(kind, "en", null))).toEqual(plain);
+      const withApp = rows(alertKeyboard(kind, "en", "https://x.dev/app/"));
+      expect(withApp[0]).toEqual(plain[0]);
+      expect(withApp[1]).toEqual([{ text: "📋 Full report", callback_data: "v:now" }, { text: "📱 Open dashboard", web_app: { url: "https://x.dev/app/" } }]);
+    }
+    expect(afterAlertRow("ms", "https://x.dev/app/")[1]).toEqual({ text: "📱 Buka papan pemuka", web_app: { url: "https://x.dev/app/" } });
+    expect(afterAlertRow("en")).toHaveLength(1);
   });
 });

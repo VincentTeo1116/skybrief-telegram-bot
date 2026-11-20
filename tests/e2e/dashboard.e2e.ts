@@ -375,8 +375,10 @@ test("NFR-6/7 headers, JSON 404, and no secrets in what the browser receives", a
 
   const api = await request.get("/api/app/dashboard", { headers: { authorization: `tma ${signInitData(ACTIVE)}` } });
   expect(api.headers()["cache-control"]).toBe("no-store");
-  let shipped = await api.text();
-  for (const file of ["/app/", "/app/app.js", "/app/scene.js", "/app/boot-strings.js", "/app/app.css"]) shipped += await (await request.get(file)).text();
-  for (const secret of ["testtoken", "e2e_secret", "waqitest"]) expect(shipped.includes(secret), secret).toBe(false);
-  expect(shipped.length, "app shell + one dashboard").toBeLessThan(140_000);
+  const data = await api.text();
+  let shell = "";
+  for (const file of ["/app/", "/app/app.js", "/app/scene.js", "/app/card.js", "/app/boot-strings.js", "/app/app.css"]) shell += await (await request.get(file)).text();
+  for (const secret of ["testtoken", "e2e_secret", "waqitest"]) expect((shell + data).includes(secret), secret).toBe(false);
+  expect(shell.length, "app shell (NFR-8 budget)").toBeLessThan(135_000);
+  expect(data.length, "one dashboard, including six days hour by hour").toBeLessThan(45_000);
 });

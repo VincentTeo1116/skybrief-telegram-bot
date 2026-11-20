@@ -4,6 +4,7 @@
  * Runs every 15 minutes (cron minute % 15 == 5, so it rarely coincides with common report times).
  * Rain detection uses HOURLY forecast data, so "soon" means the next 1-2 hours, not minutes.
  */
+import { getAppUrl } from "./appurl";
 import { alertCandidates, patchUser, placeOf, warningCandidates, type UserPatch } from "./db";
 import { aqiAlertMessage, rainAlertMessage, warningMessage } from "./format";
 import { rainAlert } from "./insights";
@@ -86,6 +87,7 @@ export async function runAlerts(env: Env, now = new Date()): Promise<{ cities: n
 
   const tg = new Telegram(env);
   const wx = makeWeather(env);
+  const appUrl = await getAppUrl(env);
   let sent = 0;
   let rainSent = 0;
   let aqiSent = 0;
@@ -107,14 +109,14 @@ export async function runAlerts(env: Env, now = new Date()): Promise<{ cities: n
       try {
         const rain = decideRain(u, mine, nowMs);
         if (rain) {
-          await tg.sendMessage(u.chatId, rainAlertMessage(mine, p, rain), alertKeyboard("rain", u.lang));
+          await tg.sendMessage(u.chatId, rainAlertMessage(mine, p, rain), alertKeyboard("rain", u.lang, appUrl));
           patch.lastRainAlert = nowMs; // only after a successful send
           sent++;
           rainSent++;
         }
         const aqi = decideAqi(u, mine, nowMs);
         if (aqi.send) {
-          await tg.sendMessage(u.chatId, aqiAlertMessage(mine, p), alertKeyboard("aqi", u.lang));
+          await tg.sendMessage(u.chatId, aqiAlertMessage(mine, p), alertKeyboard("aqi", u.lang, appUrl));
           sent++;
           aqiSent++;
         }
@@ -192,6 +194,7 @@ export async function runWarnings(env: Env, now = new Date()): Promise<{ users: 
   if (!current.length) return { users: users.length, sent: 0 };
 
   const tg = new Telegram(env);
+  const appUrl = await getAppUrl(env);
   const quiet = parseQuietHours(env.QUIET_HOURS);
   const nowLocal = nowMalaysia(now);
   let sent = 0;
@@ -217,7 +220,7 @@ export async function runWarnings(env: Env, now = new Date()): Promise<{ users: 
     const delivered: string[] = [];
     try {
       for (const w of fresh) {
-        await tg.sendMessage(u.chatId, warningMessage(w, state, p, nowLocal), alertKeyboard("warn", u.lang), { silent });
+        await tg.sendMessage(u.chatId, warningMessage(w, state, p, nowLocal), alertKeyboard("warn", u.lang, appUrl), { silent });
         delivered.push(w.id);
         sent++;
       }

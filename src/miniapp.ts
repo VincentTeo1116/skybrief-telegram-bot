@@ -5,6 +5,7 @@
  *   GET  /api/app/places?q=ipoh         city search (labels only)                      FR-9
  *   POST /api/app/place                 {"pick": n} | {"preset": n} | {"saved": n} | {"lat": .., "lon": ..}   FR-9, FR-12, FR-17
  *   POST /api/app/place/remove          {"saved": n}: forget a saved place             FR-12
+ *   POST /api/app/place/edit            {"saved": n, "action": "home" | "unhome" | "up"}   FR-20
  *   POST /api/app/settings              {"tempUnit": "f", ...}: change settings        FR-13
  *   POST /api/app/share                 a JPEG picture card: send it to the person's chat and prepare it for sharing   FR-18
  *   GET  /api/app/demo?scene=rainy      labelled demo data, no sign-in                 FR-11
@@ -21,7 +22,7 @@ import * as i18n from "./i18n";
 import { T, t } from "./i18n";
 import { STORM_CODES, aqiPeakOn, bestWindow, dailyIndex, dayPeriods, hourIndex, hourPoints, hoursBetween, nextHours, pct } from "./insights";
 import { ipuBand, officialIpu, type IpuReading } from "./ipu";
-import { activatePlace, forgetPlace, isActivePlace, savePlace, savedPlaces } from "./location";
+import { activatePlace, editPlace, forgetPlace, isActivePlace, savePlace, savedPlaces, type PlaceEdit } from "./location";
 import { PRESET_COUNT, presetName, presetPlace } from "./presets";
 import { parseSettingsChange, setLanguage, settingsPatch } from "./settings";
 import { Telegram, TelegramError } from "./telegram";
@@ -103,6 +104,18 @@ export interface Scene {
   wind: number;
   /** 0 none, 1 drizzle / light, 2 rain, 3 heavy. */
   rain: 0 | 1 | 2 | 3;
+  /** A hazy veil over the sky when the air is unhealthy (FR-21): 0 none, 1 light, 2 heavy. */
+  haze: 0 | 1 | 2;
+}
+
+/**
+ * How hazy to draw the sky. Light from "unhealthy for sensitive groups" (US AQI 101+), heavy from "unhealthy"
+ * (US AQI 151+, or Malaysia's official IPU 101+). The air card always carries the numbers and words; this is mood only.
+ */
+export function hazeOf(aqi: number | null | undefined, ipu: number | null | undefined): Scene["haze"] {
+  const level = aqi == null ? 0 : aqiLevel(aqi);
+  if (level >= 3 || (ipu != null && ipu > 100)) return 2;
+  return level === 2 ? 1 : 0;
 }
 
 /** "Windy" for a tropical city: sustained wind or gusts at these speeds (km/h), when it isn't raining. */
@@ -137,7 +150,7 @@ export function sceneOf(c: Forecast["current"]): Scene {
   else if (code === 0) kind = "clear";
   else kind = c.cloud_cover >= 80 ? "cloudy" : c.cloud_cover >= 30 ? "partly" : "clear"; // unknown code: go by cloud cover
 
-  return { kind, night: (c.is_day ?? 1) !== 1, wind: Math.round(Math.max(0, Math.min(1, windKmh / 50)) * 100) / 100, rain };
+  return { kind, night: (c.is_day ?? 1) !== 1, wind: Math.round(Math.max(0, Math.min(1, windKmh / 50)) * 100) / 100, rain, haze: 0 };
 }
 
 /** Name of the icon in the page's SVG sprite. */
@@ -157,8 +170,20 @@ export function iconOf(code: number | null | undefined, isDay: boolean): string 
 
 // ---------------------------------------------------------------- the dashboard view-model
 /** What a day's row opens up to show (FR-15). Every line is optional: a line with no data is simply absent. */
+export interface HourItem {
+  label: string;
+  icon: string;
+  cond: string;
+  temp: string;
+  /** The temperature as a number in the person's unit, for the chart (null when unknown). */
+  t: number | null;
+  prob: number;
+}
+
 export interface DayDetail {
   periods: { label: string; icon: string; cond: string; temp: string; prob: number }[];
+  /** That day hour by hour (FR-19). Empty for today, which has the "next 24 hours" strip, and when there is no hourly data. */
+  hours: HourItem[];
   rain: string;
   wind: string | null;
   uv: string | null;
@@ -207,8 +232,7 @@ export interface Dashboard {
   };
   warnings: { title: string; until: string; valid: string; area: string | null; text: string; instruction: string }[];
   rain: { level: RainLevel; text: string };
-  /** `t` = the temperature as a number in the person's unit, for the chart (null when unknown). */
-  hourly: { label: string; icon: string; cond: string; temp: string; t: number | null; prob: number }[];
+  hourly: HourItem[];
   air: {
     aqi: number;
     level: number;
@@ -238,7 +262,7 @@ export interface Dashboard {
   footer: { observed: string; source: string; backup: boolean };
   presets: string[];
   /** The person's saved places (FR-12). Indexes are what POST /api/app/place {"saved": n} expects. */
-  places: { name: string; label: string; active: boolean }[];
+  places: { name: string; label: string; active: boolean; home: boolean }[];
   /** Null in the demo: there is no account to change. */
   settings: SettingsView | null;
   strings: Record<string, string>;
@@ -277,6 +301,30 @@ export function settingsView(u: User): SettingsView {
   };
 }
 
+/** One hour of the forecast as the page shows it. `k` = index into wx.hourly. */
+function hourItem(r: Report, p: Prefs, k: number, label: string): HourItem {
+  const h = r.wx.hourly;
+  const hour = Number(h.time[k].slice(11, 13));
+  const flag = h.is_day?.[k];
+  const temp = h.temperature_2m[k];
+  return {
+    label,
+    icon: iconOf(h.weather_code[k], flag != null ? flag === 1 : hour >= 7 && hour < 19),
+    cond: i18n.wmoText(h.weather_code[k], p.lang),
+    temp: deg(temp, p),
+    t: temp == null ? null : round1(cToDisplay(temp, p.tempUnit)),
+    prob: pct(h.precipitation_probability[k]),
+  };
+}
+
+function dayHours(r: Report, p: Prefs, date: string): HourItem[] {
+  const out: HourItem[] = [];
+  r.wx.hourly.time.forEach((time, k) => {
+    if (time.startsWith(date)) out.push(hourItem(r, p, k, i18n.hourLabel(time, p.lang, p.clock)));
+  });
+  return out;
+}
+
 function dayDetail(r: Report, p: Prefs, i: number, isToday: boolean): DayDetail {
   const lang = p.lang;
   const d = r.wx.daily;
@@ -296,6 +344,7 @@ function dayDetail(r: Report, p: Prefs, i: number, isToday: boolean): DayDetail 
       temp: Number.isNaN(x.temp) ? "–" : deg(x.temp, p),
       prob: x.prob,
     })),
+    hours: isToday ? [] : dayHours(r, p, date),
     rain: t(lang, "rain_chance_day", { p: pct(d.precipitation_probability_max[i]) }) + (mm != null && mm >= 1 ? t(lang, "rain_total", { mm: mm.toFixed(0) }) : ""),
     wind: w != null ? t(lang, "wind_up_to", { w: speed(w, p) }) : null,
     uv: uv != null ? t(lang, "app_day_uv", { n: uv.toFixed(0), l: uvLabel(uv, lang) }) : null,
@@ -327,19 +376,7 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
 
   // ---- next 24 hours
   const start = hourIndex(r);
-  const hourly = nextHours(r, 24).map((row, k) => {
-    const hour = Number(row.time.slice(11, 13));
-    const flag = h.is_day?.[start + k];
-    const day = flag != null ? flag === 1 : hour >= 7 && hour < 19;
-    return {
-      label: k === 0 ? t(lang, "app_now") : i18n.hourLabel(row.time, lang, p.clock),
-      icon: iconOf(row.code, day),
-      cond: i18n.wmoText(row.code, lang),
-      temp: deg(row.temp, p),
-      t: row.temp == null ? null : round1(cToDisplay(row.temp, p.tempUnit)),
-      prob: row.prob,
-    };
-  });
+  const hourly = nextHours(r, 24).map((row, k) => hourItem(r, p, start + k, k === 0 ? t(lang, "app_now") : i18n.hourLabel(row.time, lang, p.clock)));
 
   // ---- seven days, starting today
   const daily: Dashboard["daily"] = [];
@@ -409,7 +446,7 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
     demo: opts.demo === true,
     place: label,
     title: t(lang, "app_title", { p: label }),
-    scene: sceneOf(c),
+    scene: { ...sceneOf(c), haze: hazeOf(aq?.aqi, reading?.value) },
     now: {
       temp: deg(c.temperature_2m, p),
       unit: unitLetter(p),
@@ -458,7 +495,7 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
     tips: tips(r, lang),
     footer: { observed: t(lang, "observed", { t: clock(c.time) }), source: sourceText(r, p, (s) => s), backup: r.source === "met-no" },
     presets: Array.from({ length: PRESET_COUNT }, (_, i) => presetName(i, lang)),
-    places: user ? savedPlaces(user).map((sp) => ({ name: sp.name, label: placeLabel({ ...sp }), active: isActivePlace(user, sp) })) : [],
+    places: user ? savedPlaces(user).map((sp) => ({ name: sp.name, label: placeLabel({ ...sp }), active: isActivePlace(user, sp), home: sp.home === true })) : [],
     settings: user ? settingsView(user) : null,
     strings: appStrings(lang),
   };
@@ -590,6 +627,16 @@ async function onRemovePlace(env: Env, user: User, req: Request): Promise<Respon
   return apiJson({ ...(await userDashboard(env, u, await makeWeather(env).fetchReport(placeOf(u)))), saved: true });
 }
 
+const PLACE_EDITS: readonly PlaceEdit[] = ["home", "unhome", "up"];
+
+async function onEditPlace(env: Env, user: User, req: Request): Promise<Response> {
+  const body = await readBody(req);
+  const action = body && (PLACE_EDITS as readonly unknown[]).includes(body.action) ? (body.action as PlaceEdit) : null;
+  const u = body && action && Number.isInteger(body.saved) ? await editPlace(env, user, body.saved as number, action) : null;
+  if (!u) return apiError(400, "bad_request", t(user.lang, "app_err_save"));
+  return apiJson({ ...(await userDashboard(env, u, await makeWeather(env).fetchReport(placeOf(u)))), saved: true });
+}
+
 async function onSettings(env: Env, user: User, req: Request): Promise<Response> {
   const change = parseSettingsChange(await readBody(req));
   if (!change) return apiError(400, "bad_request", t(user.lang, "app_err_save"));
@@ -671,6 +718,7 @@ const ROUTES: Record<string, "GET" | "POST"> = {
   "/api/app/places": "GET",
   "/api/app/place": "POST",
   "/api/app/place/remove": "POST",
+  "/api/app/place/edit": "POST",
   "/api/app/settings": "POST",
   "/api/app/share": "POST",
   "/api/app/demo": "GET",
@@ -698,6 +746,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         return await onSavePlace(env, auth.user, req);
       case "/api/app/place/remove":
         return await onRemovePlace(env, auth.user, req);
+      case "/api/app/place/edit":
+        return await onEditPlace(env, auth.user, req);
       case "/api/app/settings":
         return await onSettings(env, auth.user, req);
       default:

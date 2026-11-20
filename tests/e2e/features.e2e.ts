@@ -161,13 +161,13 @@ test("FR-12/14 saved places: chips switch with one tap; the official IPU follows
   await page.locator("#place-btn").click();
   await expect(page.locator("#saved .saved-row")).toHaveCount(2);
   await expect(page.locator("#saved .saved-row").nth(1)).toContainText("Current");
-  await expect(page.locator("#saved .saved-row").nth(1).locator(".icon-btn")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Remove Ipoh" })).toHaveCount(0); // you can't remove where you are
   await page.getByRole("button", { name: "Remove Kuala Lumpur" }).click();
   await expect(page.locator("#sheet-status")).toHaveText("Removed");
   await expect(page.locator("#saved-block")).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(page.locator("#place-chips")).toBeHidden();
-  expect((await dashboard(request)).places).toEqual([{ name: "Ipoh", label: "Ipoh, Malaysia", active: true }]);
+  expect((await dashboard(request)).places).toEqual([{ name: "Ipoh", label: "Ipoh, Malaysia", active: true, home: false }]);
   expect(errors).toEqual([]);
 });
 
@@ -432,4 +432,181 @@ test("FR-18 share in the demo: the card can be previewed, sending is off", async
     writeFileSync(`${SHOTS}/share-card-${scene}.png`, Buffer.from(png.split(",")[1], "base64"));
     await expect(page.locator("#settings-btn")).toBeDisabled(); // no account in the demo
   }
+});
+
+// ================================================================== v2.5
+// ------------------------------------------------------------------ FR-19 a day hour by hour
+test("FR-19 a day's details include that day hour by hour, with its own temperature line", async ({ page }) => {
+  const errors = await openApp(page, { userId: ACTIVE });
+  await ready(page);
+  await page.locator("#days .day").nth(1).click();
+  const detail = page.locator("#day-detail-1");
+  await expect(detail.locator(".hour")).toHaveCount(24);
+  await expect(detail.locator(".hour").first()).toContainText("12 AM");
+  await expect(detail.locator(".hour").nth(12)).toContainText("12 PM");
+  await expect(detail.locator(".chart .chart-line")).toHaveCount(1);
+  await expect(detail.getByRole("group", { name: /hour by hour$/ })).toBeVisible();
+  // today has the "next 24 hours" strip above, so its details don't repeat it
+  await page.locator("#days .day").nth(0).click();
+  await expect(page.locator("#day-detail-0 .hour")).toHaveCount(0);
+  await expect(page.locator("#hours .hour")).toHaveCount(24); // the main strip is untouched
+  await expect(page.locator("#hour-chart")).toHaveCount(1);
+  await page.locator("#days .day").nth(2).click();
+  expect(await axe(page)).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), "the strip scrolls inside itself, not the page").toBeLessThanOrEqual(1);
+  await page.locator("#forecast").screenshot({ path: `${SHOTS}/day-hours-390.png` });
+  expect(errors).toEqual([]);
+});
+
+// ------------------------------------------------------------------ FR-20 home and order
+test("FR-20 saved places: set a home, move one up, and home survives a full list", async ({ page, request }) => {
+  for (const preset of [5, 4, 0]) await request.post("/api/app/place", { headers: auth(), data: { preset } }); // Ipoh, Johor Bahru, then back to KL
+  const errors = await openApp(page, { userId: ACTIVE });
+  await ready(page);
+  await expect(page.locator("#place-chips .chip")).toHaveText(["Kuala Lumpur", "Johor Bahru", "Ipoh"]);
+
+  await page.locator("#place-btn").click();
+  await expect(page.locator("#saved .saved-row")).toHaveCount(3);
+  expect(await axe(page)).toEqual([]);
+  expect(await smallTargets(page)).toEqual([]);
+
+  await page.getByRole("button", { name: "Set Ipoh as home" }).click();
+  await expect(page.locator("#sheet-status")).toHaveText("Saved");
+  await expect(page.locator("#saved .saved-row").first()).toContainText("Ipoh");
+  await expect(page.getByRole("button", { name: "Ipoh is your home. Remove the home mark" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Move Kuala Lumpur up" })).toHaveCount(0); // nothing moves above home
+  await page.getByRole("button", { name: "Move Johor Bahru up" }).click();
+  await expect(page.locator("#saved .choice-text")).toHaveText(["Ipoh, Malaysia", "Johor Bahru, Malaysia", "Kuala Lumpur, Malaysia"]);
+  await page.screenshot({ path: `${SHOTS}/places-home-390.png` });
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#place-chips .chip")).toHaveText(["Ipoh", "Johor Bahru", "Kuala Lumpur"]);
+  await expect(page.locator("#place-chips .chip").first().getByRole("img", { name: "Home" })).toBeVisible();
+  await expect(page.locator("#place-name")).toHaveText("Kuala Lumpur, Malaysia"); // rearranging never changes where you are
+
+  // four more places: the list stays at five, and home is still first
+  for (const preset of [1, 2, 3, 6]) expect((await request.post("/api/app/place", { headers: auth(), data: { preset } })).status()).toBe(200);
+  const d = await dashboard(request);
+  expect(d.places).toHaveLength(5);
+  expect(d.places[0]).toMatchObject({ name: "Ipoh", home: true });
+  expect(d.places[1]).toMatchObject({ name: "Melaka", active: true }); // the newest comes right after home
+  expect(d.places.filter((p: { home: boolean }) => p.home)).toHaveLength(1);
+
+  // taking the mark away
+  expect((await request.post("/api/app/place/edit", { headers: auth(), data: { saved: 0, action: "unhome" } })).status()).toBe(200);
+  expect((await dashboard(request)).places.some((p: { home: boolean }) => p.home)).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("FR-20 saved places: impossible rearrangements are refused and change nothing", async ({ request }) => {
+  await request.post("/api/app/place", { headers: auth(), data: { preset: 5 } });
+  await request.post("/api/app/place", { headers: auth(), data: { preset: 0 } });
+  const before = (await dashboard(request)).places;
+  const bad: unknown[] = [{ saved: 0, action: "up" }, { saved: 9, action: "home" }, { saved: 0, action: "unhome" }, { saved: 1, action: "delete" }, { saved: "1", action: "home" }, { action: "home" }, { saved: 1 }, {}];
+  for (const data of bad) expect((await request.post("/api/app/place/edit", { headers: auth(), data })).status(), JSON.stringify(data)).toBe(400);
+  expect((await dashboard(request)).places).toEqual(before);
+  expect((await request.post("/api/app/place/edit", { headers: auth(), data: { saved: 1, action: "home" } })).status()).toBe(200);
+  expect((await request.post("/api/app/place/edit", { headers: auth(), data: { saved: 0, action: "home" } })).status(), "already home").toBe(400);
+  expect((await request.post("/api/app/place/edit", { headers: auth(), data: { saved: 1, action: "up" } })).status(), "can't pass home").toBe(400);
+  expect((await request.post("/api/app/place/edit", { headers: { authorization: `tma ${signInitData(PENDING)}` }, data: { saved: 0, action: "home" } })).status()).toBe(403);
+  // removing the home place (when it isn't the active one) simply removes the mark with it
+  expect((await request.post("/api/app/place/remove", { headers: auth(), data: { saved: 0 } })).status()).toBe(200);
+  expect((await dashboard(request)).places).toEqual([{ name: "Kuala Lumpur", label: "Kuala Lumpur, Malaysia", active: true, home: false }]);
+});
+
+test("FR-20 a failed rearrangement says so and shows what is really saved", async ({ page }) => {
+  await page.request.post("/api/app/place", { headers: auth(), data: { preset: 5 } });
+  await page.request.post("/api/app/place", { headers: auth(), data: { preset: 0 } });
+  await openApp(page, { userId: ACTIVE });
+  await ready(page);
+  await page.locator("#place-btn").click();
+  await page.route("**/api/app/place/edit", (r) => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "server_error", message: "Something went wrong on my side. Please try again." } }) }));
+  await page.getByRole("button", { name: "Set Ipoh as home" }).click();
+  await expect(page.locator("#sheet-status")).toHaveText("Something went wrong on my side. Please try again.");
+  await expect(page.getByRole("button", { name: "Set Ipoh as home" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Set Ipoh as home" })).toBeEnabled();
+});
+
+// ------------------------------------------------------------------ FR-21 haze
+test("FR-21 unhealthy air puts a haze over the sky; clean air does not", async ({ page }) => {
+  const errors = await openApp(page, { userId: ACTIVE });
+  await ready(page);
+  await expect(page.locator("#hero")).toHaveAttribute("data-haze", "0");
+  const clear = await page.evaluate(() => (document.getElementById("sky") as HTMLCanvasElement).toDataURL().length);
+
+  await setMock({ aqi: 165 });
+  await page.locator("#refresh-btn").click();
+  await expect(page.locator("#aqi-value")).toContainText("165");
+  await expect(page.locator("#hero")).toHaveAttribute("data-haze", "2");
+  await expect(page.locator("#sky")).toHaveAttribute("data-haze", "2");
+  await expect(page.locator("#sky")).toHaveAttribute("data-scene", /^partly-/); // the weather scene is still the weather
+  await expect(page.locator("#aqi-label")).toHaveText("Unhealthy"); // the words are on the air card: the haze is never the only signal
+  expect(await page.evaluate(() => (document.getElementById("sky") as HTMLCanvasElement).toDataURL().length)).not.toBe(clear);
+  expect(await axe(page)).toEqual([]);
+
+  await setMock({ aqi: 62 });
+  await page.locator("#refresh-btn").click();
+  await expect(page.locator("#hero")).toHaveAttribute("data-haze", "0");
+  expect(errors).toEqual([]);
+});
+
+test("FR-21 the haze demo, and its share card", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openApp(page, { path: "/app/?demo=haze" });
+  await ready(page);
+  await expect(page.locator("#hero")).toHaveAttribute("data-haze", "2");
+  await expect(page.locator("#aqi-value")).toContainText("168");
+  await page.screenshot({ path: `${SHOTS}/haze-390.png` });
+  await page.locator("#share-btn").click();
+  await expect(page.locator("#card")).toHaveAttribute("data-drawn", "true");
+  const png = await page.evaluate(() => (document.getElementById("card") as HTMLCanvasElement).toDataURL("image/png"));
+  writeFileSync(`${SHOTS}/share-card-haze.png`, Buffer.from(png.split(",")[1], "base64"));
+});
+
+// ------------------------------------------------------------------ FR-22 first-time tips
+test("FR-22 first visit: a short guide, shown once", async ({ page }) => {
+  const errors = await openApp(page, { userId: ACTIVE, firstTime: true });
+  await ready(page);
+  const tips = page.locator("#tips");
+  await expect(tips).toBeVisible();
+  await expect(tips.locator("#tips-title")).toHaveText("Welcome to your dashboard");
+  await expect(tips.locator(".tip-row")).toHaveCount(4);
+  expect(await axe(page)).toEqual([]);
+  expect(await smallTargets(page)).toEqual([]);
+  await page.screenshot({ path: `${SHOTS}/tips-390.png` });
+  await tips.locator("#tips-ok").click();
+  await expect(tips).toBeHidden();
+
+  await page.reload();
+  await ready(page);
+  await page.waitForTimeout(400);
+  await expect(tips).toBeHidden(); // never again on this device
+
+  // but it can be found again, from Settings
+  await page.locator("#settings-btn").click();
+  await page.locator("#tips-again").click();
+  await expect(tips).toBeVisible();
+  await expect(page.locator("#settings")).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(tips).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test("FR-22 the guide never appears in the demo, nor on a device that can't remember it was shown", async ({ page }) => {
+  await page.goto("about:blank");
+  await openApp(page, { path: "/app/?demo=sunny", firstTime: true });
+  await ready(page);
+  await page.waitForTimeout(400);
+  await expect(page.locator("#tips")).toBeHidden();
+});
+
+test("FR-22 storage blocked: no guide at all, rather than the guide on every visit", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", { get() { throw new Error("blocked"); } });
+  });
+  const errors = await openApp(page, { userId: ACTIVE, firstTime: true });
+  await ready(page);
+  await page.waitForTimeout(400);
+  await expect(page.locator("#tips")).toBeHidden();
+  await expect(page.locator("#place-btn")).toBeEnabled();
+  expect(errors).toEqual([]);
 });

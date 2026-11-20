@@ -69,12 +69,17 @@ shows, as a dashboard, using the same data, the same rules and each person's own
 * **Changing location in the app** saves it for the bot as well (same code as the chat). The last 5 places are remembered and appear as one-tap chips; **Use my current location** takes the position from Telegram or the browser.
 * **Settings in the app:** language, units, clock, morning and evening report times, rain / air-quality alerts and official warnings, with the same rules as the chat. (Report sections and compact mode stay in the chat: they only affect chat messages.)
 * **Official API (IPU):** for places in Malaysia the air card also shows the Department of Environment's reading from the nearest station (within 40 km, under 3 hours old). It comes from the service behind the Department's public map, which is not a documented API, so it is optional: if it is unavailable the block is simply absent. Set `IPU_URL` to `off` to disable it.
-* **Tap a day** in the forecast for its morning / afternoon / evening, rain, wind, UV, sun, air and tips. The next 24 hours have a temperature line.
+* **Tap a day** in the forecast for its morning / afternoon / evening, the whole day hour by hour, rain, wind, UV, sun, air and tips. The next 24 hours have a temperature line.
+* **Home place:** in the location sheet, mark one saved place as home (always first, never pushed out) and move the others up or down.
+* **Haze:** when the air is unhealthy (US AQI 101+ or official IPU above 100) the sky gets a dusty veil.
+* **First visit:** a short four-tip guide appears once; it can be reopened from Settings.
+* **Alerts** (rain, air quality, official warnings) carry the dashboard button too.
+* **"Open App" on the bot's profile (optional, no code):** in @BotFather send `/mybots`, choose the bot, then *Bot Settings → Configure Mini App → Enable Mini App*, and enter `https://<your-worker>/app/`. Telegram then shows an **Open App** button on the bot's profile.
 * **Share:** the share button draws a picture card of today's weather and sends it to your own chat with the bot; on Telegram 8.0 or newer it then opens Telegram's "share to a chat" picker.
-* **Preview in a normal browser:** `https://<your-worker>/app/?demo=sunny` (also `cloudy`, `rainy`, `windy`, `storm`, `night`;
+* **Preview in a normal browser:** `https://<your-worker>/app/?demo=sunny` (also `cloudy`, `rainy`, `windy`, `storm`, `night`, `haze`;
   add `&lang=ms` or `&lang=zh`). It is clearly labelled as demo data and reads nothing from the database.
 * **Air quality** is the same US AQI as in the chat report (alerts are based on it); the official IPU is shown beside it when available.
-* No framework and no build step: `public/app/` is plain HTML, CSS and JavaScript (about 116 KB before compression).
+* No framework and no build step: `public/app/` is plain HTML, CSS and JavaScript (about 123 KB before compression).
 
 Design notes, requirements, fallbacks and test evidence are in `docs/`.
 

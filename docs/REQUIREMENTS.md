@@ -20,7 +20,7 @@ Status values: Verified, Partly, Not verified, Not built. See `docs/VERIFICATION
 | FR-8 | Official MetMalaysia warnings | Must | Active warnings for the person's state/district appear at the top, with validity, area, text and source. Hidden when there are none, when warnings are switched off, or outside Malaysia (same rule as the bot). |
 | FR-9 | Change location | Should | A sheet with city search and the bot's one-tap shortcuts. Choosing a place saves it for the bot too (same code path as the chat) and reloads the dashboard. |
 | FR-10 | Personal preferences are honoured | Must | Language (en / ms / zh), °C/°F, wind unit and 12h/24h clock come from the person's bot settings. |
-| FR-11 | Preview without Telegram | Should | `/app/?demo=sunny|cloudy|rainy|windy|storm|night` shows clearly labelled demo data so the design and each animation can be reviewed in a normal browser. |
+| FR-11 | Preview without Telegram | Should | `/app/?demo=sunny|cloudy|rainy|windy|storm|night|haze` shows clearly labelled demo data so the design and each animation can be reviewed in a normal browser. |
 
 ### Added in v2.4 (owner's request, 20 Nov 2026: "do 1-4 with a proper fallback, 5 and 6 as well, and share as a picture card")
 
@@ -34,6 +34,17 @@ Status values: Verified, Partly, Not verified, Not built. See `docs/VERIFICATION
 | FR-17 | Use my current location | Must | A button in the location sheet takes the position from Telegram's location service, or else from the browser, and saves the place named by the server's own lookup. |
 | FR-18 | Share a picture card | Must | A share button shows a 1080 × 1350 picture of today's weather (sky scene, temperature, condition, AQI / IPU, rain line, 3-day outlook). Sending puts it in the person's own chat with the bot and, on Telegram 8.0+, opens Telegram's "share to a chat" picker. |
 
+### Added in v2.5 (owner's request, 20 Nov 2026)
+
+| ID | Requirement | Priority | Acceptance criteria |
+|---|---|---|---|
+| FR-19 | A day hour by hour | Must | A future day's details include that day's 24 hours (time, icon, temperature, rain chance) with its own temperature line. Today's details do not repeat the "next 24 hours" strip. A day without hourly data has no strip. |
+| FR-20 | Home place and order | Must | In the location sheet a saved place can be marked as home (one at most), moved up one step, or removed. Home is always first, shows a house icon on its chip, and is never pushed out when the list is full. Rearranging never changes the active place. |
+| FR-21 | Haze over the sky | Should | A dusty veil is drawn over the sky when the air is unhealthy: light from US AQI 101, heavy from US AQI 151 or an official IPU above 100. The weather scene underneath is unchanged, text stays readable, and the air card still carries the numbers and words. |
+| FR-22 | First-time tips | Should | The first time real data is shown on a device, a one-screen guide with four tips appears once. It can be reopened from Settings. It never appears in the demo, nor on a device that cannot remember it was shown. |
+| FR-23 | Alerts open the dashboard | Must | Rain, air-quality and official-warning alert messages carry the "Open dashboard" button when the app's address is known, and keep it after "Mute". |
+| FR-24 | "Open App" button on the bot's profile | Could | A BotFather setting, no code: see the README. Not verifiable from the code. |
+
 ## Non-functional
 
 | ID | Requirement | Priority | Acceptance criteria |
@@ -45,7 +56,7 @@ Status values: Verified, Partly, Not verified, Not built. See `docs/VERIFICATION
 | NFR-5 | Light and dark themes | Must | Follows Telegram's theme (falls back to the system setting). |
 | NFR-6 | Security baseline | Must | Strict CSP and security headers; no secrets in the client; all input validated on the server; JSON errors leak nothing. |
 | NFR-7 | Error pages | Must | Unknown page → custom 404 page with HTTP 404; unknown API path → JSON 404. |
-| NFR-8 | Small and cheap | Must | No framework, no build step. Budget: app shell (HTML + CSS + JS) under 130 KB uncompressed (raised from 100 KB in v2.4: settings, the share card and the chart added about 40 KB; it is 116 KB, about 30 KB compressed). A dashboard load costs at most 5 outgoing requests (the fifth is the optional IPU feed), so it fits Cloudflare's free plan. |
+| NFR-8 | Small and cheap | Must | No framework, no build step. Budget: app shell (HTML + CSS + JS) under 130 KB uncompressed (raised from 100 KB in v2.4: settings, the share card and the chart added about 40 KB; it is 123 KB after v2.5). A dashboard load costs at most 5 outgoing requests (the fifth is the optional IPU feed), so it fits Cloudflare's free plan. |
 | NFR-9 | The bot keeps working exactly as before | Must | All existing unit and integration tests still pass. |
 
 ## Sample data used by the tests

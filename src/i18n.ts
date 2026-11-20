@@ -584,6 +584,40 @@ export const T: Record<string, Row> = {
     "Gambar tidak dapat dihantar. Sila cuba sebentar lagi.",
     "图片发送失败，请稍后再试。",
   ],
+  // ---- v2.5: home place and order, first-time tips
+  app_home: ["Home", "Rumah", "家"],
+  app_place_home: ["Set {p} as home", "Tetapkan {p} sebagai rumah", "将 {p} 设为家"],
+  app_place_unhome: ["{p} is your home. Remove the home mark", "{p} ialah rumah anda. Buang tanda rumah", "{p} 是您的家。取消标记"],
+  app_place_up: ["Move {p} up", "Alihkan {p} ke atas", "将 {p} 上移"],
+  app_places_hint: [
+    "Home always comes first and is never replaced by newer places.",
+    "Rumah sentiasa di tempat pertama dan tidak digantikan oleh tempat yang lebih baharu.",
+    "“家”始终排在最前，不会被新的地点替换。",
+  ],
+  app_tips_title: ["Welcome to your dashboard", "Selamat datang ke papan pemuka anda", "欢迎使用天气面板"],
+  app_tip_place: [
+    "Tap the place name to change location or use your current location. Your recent places stay one tap away.",
+    "Ketik nama tempat untuk menukar lokasi atau guna lokasi semasa. Tempat terkini anda hanya satu ketikan sahaja.",
+    "点击地点名称可更换位置或使用当前位置。最近的地点一键即可切换。",
+  ],
+  app_tip_settings: [
+    "Language, units, report times and alerts are behind the sliders button.",
+    "Bahasa, unit, masa laporan dan amaran ada di butang peluncur.",
+    "语言、单位、报告时间和提醒都在滑块按钮里。",
+  ],
+  app_tip_day: [
+    "Tap any day in the forecast to see it hour by hour.",
+    "Ketik mana-mana hari dalam ramalan untuk melihatnya jam demi jam.",
+    "点击预报中的任意一天，可查看逐小时详情。",
+  ],
+  app_tip_share: [
+    "Share today's weather as a picture with the share button.",
+    "Kongsi cuaca hari ini sebagai gambar dengan butang kongsi.",
+    "点击分享按钮，可将今天的天气以图片形式分享。",
+  ],
+  app_tips_ok: ["Got it", "Faham", "知道了"],
+  app_tips_again: ["How the dashboard works", "Cara papan pemuka berfungsi", "面板使用说明"],
+  app_day_hours: ["{d}, hour by hour", "{d}, jam demi jam", "{d} 逐小时"],
   app_card_alt: ["Picture card: {p}, {t}, {c}", "Kad gambar: {p}, {t}, {c}", "图片卡片：{p}，{t}，{c}"],
 };
 

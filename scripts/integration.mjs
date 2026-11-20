@@ -847,6 +847,8 @@ try {
   check("no callback_data exceeds Telegram's 64-byte limit", !calls.some((c) => buttons(c).some((b) => Buffer.byteLength(b.callback_data ?? "") > 64)));
   check("the bot token never appears in messages", !calls.some((c) => JSON.stringify(c.body).includes("testtoken")));
   check("no 'undefined' / 'NaN' ever reached a user", !calls.some((c) => /\bundefined\b|\bNaN\b/.test(text(c))));
+  const alerts = calls.filter((c) => c.method === "sendMessage" && buttons(c).some((b) => String(b.callback_data ?? "").startsWith("mute:")));
+  check("every rain / air / warning alert carries the 'Open dashboard' button", alerts.length >= 3 && alerts.every((c) => buttons(c).some((b) => b.web_app?.url === "https://skybrief.test/app/")), `alerts: ${alerts.length}`);
   check("no handler errors were logged", !/handler_error|daily_crashed|alerts_crashed/.test(workerLog), (workerLog.match(/(handler_error|daily_crashed|alerts_crashed).*/g) ?? []).slice(0, 2).join("\n"));
 } catch (e) {
   failures.push(`crash: ${e.stack ?? e}`);

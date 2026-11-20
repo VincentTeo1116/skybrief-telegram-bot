@@ -75,6 +75,7 @@
   <symbol id="i-share" viewBox="0 0 24 24"><path class="i-ui" d="M12 15V4M8 7.6l4-4 4 4M5 12v6.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V12"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path class="i-ui" d="M4 7h9M19 7h1M4 17h1M11 17h9M16 9.4a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8zM8 19.4a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8z"/></symbol>
   <symbol id="i-target" viewBox="0 0 24 24"><path class="i-ui" d="M12 18.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M12 13.2a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path class="i-ui" d="M4 11.2l8-6.7 8 6.7M6.2 9.6V19.500h4.300v-5h3v5h4.300V9.600"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path class="i-ui" d="M5 12.500l4.500 4.500L19 7.500"/></symbol>
   <symbol id="i-walk" viewBox="0 0 24 24"><path class="i-ui" d="M13.500 5.200a1.400 1.400 0 1 0 0-2.800 1.400 1.400 0 0 0 0 2.800zM9 21.500l2.300-6.200-2-2.300.9-4.800 3.300-.9 2 3.400 3 1.300M10.200 8.200L7 9.800l-.8 3.200M13.600 15.300l2 2.400.9 3.800"/></symbol>
 </svg>
@@ -161,6 +162,7 @@
   <div id="saved-block" hidden>
     <h3 class="sheet-sub" id="saved-title"></h3>
     <ul class="choices" id="saved"></ul>
+    <p class="small" id="saved-hint"></p>
   </div>
   <h3 class="sheet-sub" id="shortcuts-title"></h3>
   <ul class="choices choices-2" id="shortcuts"></ul>
@@ -173,6 +175,15 @@
   </div>
   <p class="sheet-status" id="settings-status" role="status" aria-live="polite"></p>
   <div id="settings-body"></div>
+</dialog>
+
+<dialog id="tips" class="sheet" aria-labelledby="tips-title">
+  <div class="sheet-head">
+    <h2 id="tips-title" class="sheet-title"></h2>
+    <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <ul class="tip-list" id="tips-list" role="list"></ul>
+  <button type="button" class="btn btn-primary btn-wide" id="tips-ok" autofocus></button>
 </dialog>
 
 <dialog id="share" class="sheet" aria-labelledby="share-title">

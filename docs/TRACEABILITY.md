@@ -22,6 +22,11 @@ Unit = `test/miniapp.test.ts` (Vitest). E2E = `tests/e2e/*.e2e.ts` (Playwright, 
 | FR-16 hourly chart | `miniapp.ts` (`hourly[].t`), `app.js` `hourChart` | Unit "the chart gets a plain number"; E2E "FR-16" ×2 |
 | FR-17 GPS | `miniapp.ts` `onSavePlace` (lat/lon), `app.js` `useMyLocation` | E2E "FR-17" ×3, "F16" |
 | FR-18 share card | `public/app/card.js`, `scene.js` `makePainter`, `miniapp.ts` `onShare`, `telegram.ts` `sendPhoto` / `savePreparedPhoto` | E2E "FR-18" ×3, "F18" ×2, "F19" |
+| FR-19 day hour by hour | `miniapp.ts` `hourItem` / `dayHours`, `app.js` `hourStrip` | Unit "FR-19" ×2; E2E "FR-19 a day's details include that day hour by hour" |
+| FR-20 home and order | `location.ts` (`tidy`, `remember`, `editPlace`), `miniapp.ts` `onEditPlace`, `app.js` `renderSavedPlaces` / `editPlace` | Unit "FR-20"; E2E "FR-20" ×3 |
+| FR-21 haze | `miniapp.ts` `hazeOf`, `scene.js` `hazeTint` + bands, `card.js` | Unit "FR-21"; E2E "FR-21" ×2, haze demo in the scene / accessibility loops |
+| FR-22 first-time tips | `app.js` `maybeShowTips` / `openTips`, `index.html` `#tips` | E2E "FR-22" ×3 |
+| FR-23 alerts open the dashboard | `keyboards.ts` `alertKeyboard` / `afterAlertRow`, `alerts.ts`, `handlers.ts` (mute) | Unit "FR-23"; Integ "every rain / air / warning alert carries the 'Open dashboard' button" |
 | NFR-1 access | `miniapp.ts` `verifyInitData`, `authorise` | Unit "verifyInitData" ×7, "no session, no data"; E2E "F1", "F2", "F3", "NFR-1 someone who loses access…" |
 | NFR-2 fallbacks | see `docs/FALLBACKS.md` | E2E "F1" … "F12" |
 | NFR-3 responsive | `app.css` | E2E "NFR-3 <width>px <page>" ×28, "text at 200%" |

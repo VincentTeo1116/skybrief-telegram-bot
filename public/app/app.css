@@ -650,6 +650,30 @@ main:focus { outline: none; }
   background: var(--surface-2);
 }
 
+
+/* ================================================================== v2.5 additions */
+/* ---- a day's own hour strip inside its details */
+.day-detail .hours-scroll { margin: 0; padding: 0 0 var(--sp-2); }
+.day-detail .hour:first-child { background: none; }
+.day-detail .hour:first-child .hour-time { color: var(--muted); font-weight: 400; }
+
+/* ---- saved places: home, order */
+.chip { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.chip .ico { width: 1rem; height: 1rem; }
+.chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.saved-row { flex-wrap: wrap; }
+.saved-row .choice { flex: 1 1 9rem; }
+.saved-actions { display: flex; gap: var(--sp-1); flex: none; margin-left: auto; }
+.icon-btn[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
+.icon-btn:disabled { color: var(--muted); }
+#saved-hint { margin-top: var(--sp-2); }
+
+/* ---- first-time tips */
+.tip-list { display: grid; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-4); }
+.tip-row { display: flex; align-items: flex-start; gap: var(--sp-3); }
+.tip-ico { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--surface-2); color: var(--brand); }
+#tips-again { margin-top: var(--sp-2); }
+
 /* ------------------------------------------------------------------ wider screens */
 @media (min-width: 30rem) {
   .day { gap: var(--sp-2) var(--sp-3); }

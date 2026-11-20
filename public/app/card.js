@@ -1,7 +1,7 @@
 // The picture card for sharing (FR-18): today's weather drawn on a 1080 x 1350 canvas, the 4:5 portrait size chat
 // apps show large. It uses the same sky painter as the live page (one still frame) and only text that is already on
 // the dashboard, so the picture can never say something the page doesn't.
-import { STILL, makePainter } from "./scene.js";
+import { STILL, hazeTint, makePainter } from "./scene.js";
 
 export const CARD_W = 1080;
 export const CARD_H = 1350;
@@ -176,11 +176,16 @@ export function drawCard(canvas, d, colours) {
   sky.addColorStop(1, colours.bottom);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, CARD_W, CARD_H);
+  const haze = hazeTint(d.scene); // over the whole card, so there is no edge where the sky scene ends
+  if (haze) {
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, CARD_W, CARD_H);
+  }
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, CARD_W, 700);
   ctx.clip();
-  makePainter(CARD_W, 700, d.scene, { unit: 2.5, right: CARD_W - 40 }).draw(ctx, STILL);
+  makePainter(CARD_W, 700, d.scene, { unit: 2.5, right: CARD_W - 40, veil: false }).draw(ctx, STILL);
   ctx.restore();
   // a soft shade behind the words so they read on any sky, also where clouds pass behind the place name
   const top = ctx.createLinearGradient(0, 0, 0, 280);

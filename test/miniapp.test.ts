@@ -129,7 +129,7 @@ describe("buildDashboard: the same numbers and words as the chat report", () => 
     expect(d.title).toBe("Weather in Kuala Lumpur, Malaysia");
     expect(d.now).toMatchObject({ temp: "28°", unit: "C", cond: "Partly cloudy", icon: "partly-day", feels: "Feels like 33°", hi: "33°", lo: "25°", date: "Tuesday, 3 November", clock: "8:15 AM" });
     expect(d.now.trend).toEqual({ warmer: true, text: "3° warmer than yesterday" });
-    expect(d.scene).toEqual({ kind: "partly", night: false, wind: 0.23, rain: 0 });
+    expect(d.scene).toEqual({ kind: "partly", night: false, wind: 0.23, rain: 0, haze: 0 });
     const chat = weatherMessage(report, P());
     for (const piece of ["28°C", "Partly cloudy", "Feels like 33°", "3° warmer than yesterday", "AQI 62", "Moderate", "Today: 5–10 PM"]) expect(chat).toContain(piece);
   });
@@ -247,13 +247,14 @@ describe("buildDashboard: the same numbers and words as the chat report", () => 
   });
 
   it("stays small enough for a quick load", () => {
-    expect(JSON.stringify(d).length).toBeLessThan(16_000);
+    // about 14 KB of it is six days of hour-by-hour forecast (FR-19); it compresses to a few KB on the wire
+    expect(JSON.stringify(d).length).toBeLessThan(42_000);
   });
 });
 
 // ------------------------------------------------------------------ FR-11
 describe("demo scenes", () => {
-  const expected = { sunny: "clear", cloudy: "cloudy", rainy: "rain", windy: "windy", storm: "storm", night: "clear" } as const;
+  const expected = { sunny: "clear", cloudy: "cloudy", rainy: "rain", windy: "windy", storm: "storm", night: "clear", haze: "partly" } as const;
   for (const scene of DEMO_SCENES) {
     it(`${scene} draws the ${expected[scene]} sky and is marked as a demo`, () => {
       const demo = demoReport(scene, "en", new Date(NOW));

@@ -105,6 +105,33 @@ Additional items **not verified** in v2.4:
 * The 10-second share limit is per Worker instance, so on Cloudflare (many instances) it is weaker than in the test.
 * The migration `0004_places.sql` was applied to local databases only.
 
+## v2.5 (day hour by hour, home place, haze, first-time tips, alerts open the dashboard)
+
+Run on the same machine on 20 Nov 2026. Nothing was deployed.
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | Pass |
+| `npm test` | 325 passed, 7 skipped (live) |
+| `npm run test:integration` | 178 passed, 0 failed |
+| `npm run test:e2e` | 108 passed |
+| Size | App shell 123 KB (budget 130 KB). One dashboard answer is now about 30 KB uncompressed, because it carries six days of hourly forecast |
+
+| ID | Status | Evidence |
+|---|---|---|
+| FR-19 | Verified | 24 hours and a temperature line inside a future day's details; none for today; no sideways page scroll |
+| FR-20 | Verified | Set home, move up, home first on chips with its icon, home kept through a full list, impossible moves refused, failure path |
+| FR-21 | Verified | Real path: mock AQI 165 turns the haze on and 62 turns it off; demo scene; share card. Looked at in a screenshot. Text contrast under the veil was reasoned from the colours and passes the automated scan, but was not measured pixel by pixel |
+| FR-22 | Verified | Shown once, not after reload, reachable from Settings, never in the demo or with storage blocked |
+| FR-23 | Verified locally | Unit test of the keyboards; the integration run confirms every alert message sent carries the button |
+| FR-24 | Not verifiable here | A BotFather setting made by the owner |
+
+Mutation checks: alerts without the button → unit "FR-23" failed; haze threshold removed → unit "FR-21" failed; a place allowed above home → E2E "impossible rearrangements" failed; tips on every visit → E2E "a short guide, shown once" failed. All restored to green.
+
+Screenshots viewed: haze dashboard, a day's hour strip, the saved-places list with home, the tips sheet.
+
+Test changes worth knowing: the "app shell + dashboard under 140 KB" check was split into "shell under 135 KB" and "dashboard under 45 KB"; the old combined limit was exceeded by the hourly data, not by a regression.
+
 ## Not verified
 
 * **Inside a real Telegram client.** The page was driven with a stand-in for Telegram's script. Real `initData`, the back

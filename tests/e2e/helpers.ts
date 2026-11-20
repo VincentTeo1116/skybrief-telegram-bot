@@ -35,6 +35,8 @@ export interface OpenOptions {
   gps?: { latitude: number; longitude: number } | "denied";
   /** false = an older Telegram without shareMessage / LocationManager. */
   modern?: boolean;
+  /** true = this device has never opened the dashboard, so the first-time tips appear. Default: they were seen already. */
+  firstTime?: boolean;
 }
 
 /** Open the mini app the way Telegram would: its bridge script is replaced by a stub that carries the session. */
@@ -81,6 +83,15 @@ export async function openApp(page: Page, o: OpenOptions = {}): Promise<string[]
     },
     { initData, userId: o.userId ?? 0, scheme: o.scheme ?? "light", gps: o.gps ?? null, modern: o.modern ?? true },
   );
+  if (!o.firstTime) {
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("skybrief.tips.v1", "1");
+      } catch {
+        /* storage blocked in this test: the tips are not shown then either */
+      }
+    });
+  }
   await page.goto(o.path ?? "/app/");
   return errors;
 }

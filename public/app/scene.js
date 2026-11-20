@@ -81,14 +81,24 @@ function moonSprite(size) {
 const wrap = (v, span) => ((v % span) + span) % span;
 
 /**
+ * The colour of the haze veil for a scene, or null when the air is fine. A DARK dusty tone on purpose: blending the
+ * sky towards it keeps white text readable (it is darker than every sky's lightest stop), unlike a pale smog colour.
+ */
+export function hazeTint(scene) {
+  const alpha = [0, 0.3, 0.5][scene && scene.haze] || 0;
+  return alpha ? `rgba(${scene.night ? "74,66,56" : "120,104,84"},${alpha})` : null;
+}
+
+/**
  * Everything needed to draw one scene at one size. Pure: it only draws on the context it is given, so the same
  * painter serves the live sky and the still picture on the share card.
  *
  * @param {number} w  width in CSS pixels
  * @param {number} h  height in CSS pixels
  * @param {{kind: string, night: boolean, wind: number, rain: number}} scene
- * @param {{unit?: number, right?: number}} [opts]  unit = size factor (default follows the width);
- *                                                  right = x of the right edge the sun / moon hangs from
+ * @param {{unit?: number, right?: number, veil?: boolean}} [opts]  unit = size factor (default follows the width);
+ *                                                  right = x of the right edge the sun / moon hangs from;
+ *                                                  veil = false leaves the flat haze tint to the caller (the share card)
  * @returns {{ draw(ctx: CanvasRenderingContext2D, t: number): void }}
  */
 export function makePainter(w, h, scene, opts = {}) {
@@ -107,7 +117,7 @@ export function makePainter(w, h, scene, opts = {}) {
     const right = opts.right ?? Math.min(w, w / 2 + 480) - 16; // right edge of the page column on wide screens
     const body = { x: right - 54 * u, y: 112 * u, r: 30 * u };
 
-    parts = { u, body, sun: false, moon: null, stars: [], clouds: [], drops: [], streaks: [], leaves: [], fog: [], bolts: null };
+    parts = { u, body, sun: false, moon: null, stars: [], clouds: [], drops: [], streaks: [], leaves: [], fog: [], bolts: null, haze: null, hazeBands: [] };
 
     const showBody = kind === "clear" || kind === "partly" || kind === "windy";
     if (showBody && !night) parts.sun = true;
@@ -145,6 +155,15 @@ export function makePainter(w, h, scene, opts = {}) {
     if (kind === "fog") {
       for (let i = 0; i < 6; i++) {
         parts.fog.push({ y: (0.2 + R() * 0.75) * h, ht: (44 + R() * 50) * u, speed: 0.05 + R() * 0.09, phase: R() * TAU, alpha: 0.1 + R() * 0.1 });
+      }
+    }
+
+    // haze: slow dusty bands in the upper sky, on top of the flat veil
+    parts.haze = hazeTint(scene);
+    if (parts.haze) {
+      const H = seeded(97);
+      for (let i = 0; i < 4 + scene.haze * 2; i++) {
+        parts.hazeBands.push({ y: (0.04 + H() * 0.5) * h, ht: (50 + H() * 60) * u, speed: 0.03 + H() * 0.05, phase: H() * TAU, alpha: 0.05 + H() * 0.05 * scene.haze });
       }
     }
 
@@ -285,6 +304,22 @@ export function makePainter(w, h, scene, opts = {}) {
       g.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = g;
       ctx.fillRect(x, f.y, w * 1.5, f.ht);
+    }
+
+    if (parts.haze) {
+      if (opts.veil !== false) {
+        ctx.fillStyle = parts.haze;
+        ctx.fillRect(0, 0, w, h);
+      }
+      for (const b of parts.hazeBands) {
+        const x = -w * 0.25 + Math.sin(t * b.speed + b.phase) * w * 0.2;
+        const g = ctx.createLinearGradient(x, 0, x + w * 1.5, 0);
+        g.addColorStop(0, "rgba(196,176,140,0)");
+        g.addColorStop(0.5, `rgba(196,176,140,${b.alpha})`);
+        g.addColorStop(1, "rgba(196,176,140,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(x, b.y, w * 1.5, b.ht);
+      }
     }
 
     if (parts.drops.length) {
@@ -439,6 +474,7 @@ export function createSky(canvas) {
     set(next) {
       scene = next;
       canvas.dataset.scene = `${next.kind}-${next.night ? "night" : "day"}`;
+      canvas.dataset.haze = String(next.haze || 0);
       resize();
       refresh();
     },

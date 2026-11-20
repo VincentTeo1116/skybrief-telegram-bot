@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="SkyBrief: current weather, air quality and the 7-day forecast for your saved location.">
+<title>SkyBrief Weather</title>
+<link rel="icon" href="/app/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/app/app.css">
+<!-- Telegram's official Mini App bridge: gives the page the signed initData, the theme and the back button. -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script type="module" src="/app/app.js"></script>
+</head>
+<body>
+
+<!-- Icon sprite. Colours come from CSS variables (app.css), so the icons follow the theme. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-clear-day" viewBox="0 0 24 24">
+    <circle class="i-sun" cx="12" cy="12" r="4.6"/>
+    <path class="i-ray" d="M12 2.4v2.7M12 18.9v2.7M2.4 12h2.7M18.9 12h2.7M5.2 5.2l1.9 1.9M16.9 16.9l1.9 1.9M5.2 18.8l1.9-1.9M16.9 7.1l1.9-1.9"/>
+  </symbol>
+  <symbol id="i-clear-night" viewBox="0 0 24 24">
+    <path class="i-moon" d="M20.2 14.6A8.6 8.6 0 1 1 9.4 3.8a7 7 0 0 0 10.8 10.8z"/>
+  </symbol>
+  <symbol id="i-partly-day" viewBox="0 0 24 24">
+    <circle class="i-sun" cx="8.4" cy="8.2" r="3.4"/>
+    <path class="i-ray" d="M8.4 1.6v1.9M1.8 8.2h1.9M3.7 3.5l1.4 1.4M13.1 3.5l-1.4 1.4M3.7 12.9l1.4-1.4"/>
+    <path class="i-cloud" d="M8.6 21a4.1 4.1 0 0 1-.55-8.16 5.45 5.45 0 0 1 10.55 1A3.65 3.65 0 0 1 18.1 21z"/>
+  </symbol>
+  <symbol id="i-partly-night" viewBox="0 0 24 24">
+    <path class="i-moon" d="M14.6 9.3A5.6 5.6 0 1 1 7.5 2.2a4.6 4.6 0 0 0 7.1 7.1z"/>
+    <path class="i-cloud" d="M8.6 21a4.1 4.1 0 0 1-.55-8.16 5.45 5.45 0 0 1 10.55 1A3.65 3.65 0 0 1 18.1 21z"/>
+  </symbol>
+  <symbol id="i-cloudy" viewBox="0 0 24 24">
+    <path class="i-cloud-back" d="M11.3 13.5a3.4 3.4 0 0 1-.45-6.77 4.5 4.5 0 0 1 8.7.83 3 3 0 0 1-.4 5.94z"/>
+    <path class="i-cloud" d="M6.5 20.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.6 1.1 4 4 0 0 1-.5 7.86z"/>
+  </symbol>
+  <symbol id="i-fog" viewBox="0 0 24 24">
+    <path class="i-cloud" d="M6.5 14.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.6 1.1 4 4 0 0 1-.5 7.86z"/>
+    <path class="i-line" d="M4 17.8h16M7 21h10"/>
+  </symbol>
+  <symbol id="i-drizzle" viewBox="0 0 24 24">
+    <path class="i-cloud" d="M6.5 14.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.6 1.1 4 4 0 0 1-.5 7.86z"/>
+    <path class="i-drop" d="M9 17.4l-.8 2M14.4 17.4l-.8 2"/>
+  </symbol>
+  <symbol id="i-rain" viewBox="0 0 24 24">
+    <path class="i-cloud-dark" d="M6.5 14.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.6 1.1 4 4 0 0 1-.5 7.86z"/>
+    <path class="i-drop" d="M7.6 17.2l-1.4 3.6M12.3 17.2l-1.4 3.6M17 17.2l-1.4 3.6"/>
+  </symbol>
+  <symbol id="i-storm" viewBox="0 0 24 24">
+    <path class="i-cloud-dark" d="M6.5 14.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.6 1.1 4 4 0 0 1-.5 7.86z"/>
+    <path class="i-bolt" d="M12.6 13.2l-3.4 5h2.6l-1.1 4.2 3.9-5.6h-2.7z"/>
+    <path class="i-drop" d="M6.4 17.2l-1 2.6M17.8 17.2l-1 2.6"/>
+  </symbol>
+  <symbol id="i-snow" viewBox="0 0 24 24">
+    <path class="i-cloud" d="M6.5 14.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.6 1.1 4 4 0 0 1-.5 7.86z"/>
+    <path class="i-flake" d="M7.5 18.2h.01M12 20.4h.01M16.5 18.2h.01"/>
+  </symbol>
+  <!-- interface icons: one colour, inherit the text colour -->
+  <symbol id="i-pin" viewBox="0 0 24 24"><path class="i-ui-fill" d="M12 2.5a7 7 0 0 0-7 7c0 4.9 5.6 10.9 6.3 11.6a1 1 0 0 0 1.4 0c.7-.7 6.3-6.7 6.3-11.6a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path class="i-ui" d="M6.5 9.5l5.5 5.5 5.5-5.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path class="i-ui" d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.6 3.8v3.6H16"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path class="i-ui" d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path class="i-ui" d="M10.8 17.3a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.6 15.6l4.6 4.6"/></symbol>
+  <symbol id="i-water" viewBox="0 0 24 24"><path class="i-ui-fill" d="M12 3.2c-.3 0-.5.1-.7.4C9.9 5.400 6 10.200 6 14a6 6 0 0 0 12 0c0-3.800-3.900-8.600-5.300-10.400a.9.9 0 0 0-.7-.4z"/></symbol>
+  <symbol id="i-wind" viewBox="0 0 24 24"><path class="i-ui" d="M3 9h10.500a2.800 2.800 0 1 0-2.700-3.600M3 13.500h15a2.800 2.800 0 1 1-2.700 3.600M3 18h6.500"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path class="i-ui" d="M4.200 17a8.500 8.500 0 1 1 15.600 0M12 13.500l3.600-4.200"/></symbol>
+  <symbol id="i-sunrise" viewBox="0 0 24 24"><path class="i-ui" d="M3 18.500h18M7.200 18.500a4.800 4.800 0 0 1 9.600 0M12 5v4.200M9.300 7.500L12 4.800l2.700 2.700M4.600 11.800l1.500 1.300M19.400 11.800l-1.500 1.300"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path class="i-ui" d="M12 19.500v-15M6.500 10l5.500-5.500 5.500 5.500"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path class="i-ui" d="M12 4.200L2.900 19.500h18.200zM12 10v4.300M12 16.900v.100"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><path class="i-ui" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5.500M12 7.600v.100"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path class="i-ui" d="M5 12.500l4.500 4.500L19 7.500"/></symbol>
+  <symbol id="i-walk" viewBox="0 0 24 24"><path class="i-ui" d="M13.500 5.200a1.400 1.400 0 1 0 0-2.800 1.400 1.400 0 0 0 0 2.800zM9 21.500l2.300-6.200-2-2.300.9-4.800 3.300-.9 2 3.400 3 1.300M10.200 8.200L7 9.800l-.8 3.200M13.600 15.300l2 2.400.9 3.800"/></symbol>
+</svg>
+
+<a class="skip" href="#main">Skip to the weather</a>
+
+<div id="app" class="app" data-state="loading">
+  <header class="hero" id="hero" data-sky="loading">
+    <canvas id="sky" class="sky" aria-hidden="true"></canvas>
+    <div class="hero-inner">
+      <div class="hero-bar">
+        <button type="button" class="pill" id="place-btn" aria-haspopup="dialog" disabled>
+          <svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>
+          <span class="pill-text" id="place-name">SkyBrief</span>
+          <svg class="ico ico-chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+        </button>
+        <button type="button" class="pill pill-round" id="refresh-btn" aria-label="Refresh" disabled>
+          <svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>
+        </button>
+      </div>
+      <div class="hero-main">
+        <h1 class="sr-only" id="page-title">SkyBrief Weather</h1>
+        <p class="hero-date" id="now-date">&nbsp;</p>
+        <p class="hero-temp"><span id="now-temp">––</span><span class="hero-unit" id="now-unit"></span></p>
+        <p class="hero-cond" id="now-cond">&nbsp;</p>
+        <p class="hero-sub" id="now-sub">&nbsp;</p>
+        <p class="hero-trend" id="now-trend" hidden></p>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="grid" tabindex="-1">
+    <div id="notices" class="span2 notices" role="status" aria-live="polite"></div>
+    <div id="content" class="content span2">
+      <div class="card skeleton" aria-hidden="true"></div>
+      <div class="card skeleton" aria-hidden="true"></div>
+      <div class="card skeleton" aria-hidden="true"></div>
+    </div>
+  </main>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<!-- Full-screen message: outside Telegram, not allowed, or nothing could be loaded. -->
+<div id="gate" class="gate" hidden>
+  <div class="gate-box">
+    <svg class="gate-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-partly-day"/></svg>
+    <p class="gate-title" id="gate-title" role="alert"></p>
+    <p class="gate-hint" id="gate-hint" hidden></p>
+    <button type="button" class="btn btn-primary" id="gate-retry" hidden></button>
+  </div>
+</div>
+
+<dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+  <div class="sheet-head">
+    <h2 id="sheet-title" class="sheet-title"></h2>
+    <button type="button" class="icon-btn" id="sheet-close"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <p class="sheet-hint" id="sheet-hint"></p>
+  <form id="search-form" class="search" novalidate>
+    <label class="search-label" for="search-input" id="search-label"></label>
+    <div class="search-row">
+      <input id="search-input" class="input" type="search" name="q" autocomplete="off" autocapitalize="words" enterkeyhint="search" maxlength="60">
+      <button type="submit" class="btn btn-primary" id="search-btn"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><span id="search-btn-text"></span></button>
+    </div>
+  </form>
+  <p class="sheet-status" id="sheet-status" role="status" aria-live="polite"></p>
+  <div id="results-block" hidden>
+    <h3 class="sheet-sub" id="results-title"></h3>
+    <ul class="choices" id="results"></ul>
+  </div>
+  <h3 class="sheet-sub" id="shortcuts-title"></h3>
+  <ul class="choices choices-2" id="shortcuts"></ul>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<noscript><p class="noscript">This dashboard needs JavaScript. Please turn it on, or use the SkyBrief bot in Telegram.</p></noscript>
+</body>
+</html>

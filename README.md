@@ -18,6 +18,7 @@ Every user has their own saved location, language, units, layout, alerts and rep
 | 📍 **Live location** | Tap **Share my location**: GPS detection, saved automatically. Or pick one of 10 shortcuts, or just *type any city name*. |
 | 📐 **Units & display** | °C / °F, km/h / m/s / mph, 12h / 24h clock, and a **compact mode** that fits a report on one screen. |
 | ⚙️ **Settings** | Show or hide any of 7 report sections; **English** (default), **Bahasa Melayu**, **中文**. |
+| 📱 **Mini app dashboard** | A weather dashboard that opens **inside Telegram**: animated sky (sunny, cloudy, rainy, windy, storm, night), current weather, air quality, hourly outlook, 3-day / 7-day forecast, official warnings, and a location picker. Tap **📱 Open dashboard** under any report or send `/app`. |
 | 💬 **Inline mode** | Type `@SkyBrief_AI_bot Ipoh` in any chat to share a weather card. |
 | 🛟 **Backup data source** | If Open-Meteo is down, reports automatically come from MET Norway (and say so). |
 | ⚠️ **Official warnings** | MetMalaysia thunderstorm, heavy-rain and hot-weather warnings for **your state and district**: shown at the top of your report and pushed once when issued (silently at night). `/warnings` shows what is active. Malaysia only. |
@@ -53,6 +54,25 @@ Telegram ──webhook──▶ Cloudflare Worker ──▶ D1 (users, settings)
 * Telegram calls `POST /webhook` (protected by a secret header). The Worker acknowledges instantly and processes in the background.
 * Each minute, every user is served when their own local time reaches their chosen time. A claim in the database prevents duplicates, and a 2-hour catch-up window covers any outage.
 * Alerts are checked every 15 minutes, once per city, and each alert has a cooldown (3 hours), so a hovering value can never flood a chat. They are paused during quiet hours (22:00–06:30 local by default).
+
+## Mini app (dashboard inside Telegram)
+
+The same Worker serves a small web page at `/app/` that Telegram opens as a **Mini App**. It shows what the chat report
+shows, as a dashboard, using the same data, the same rules and each person's own language, units and clock.
+
+* **Open it:** the **📱 Open dashboard** button under every report, or `/app`. To also put it on the button next to the
+  message box, open `https://<your-worker>/setup?key=<WEBHOOK_SECRET>&menu=app` once (`&menu=commands` puts the command list back).
+* **After deploying this version, open `/setup` once.** That is how the bot learns its own public address; until then
+  no dashboard button is shown. (Or set the `APP_URL` variable to the Worker's `https://…` origin.)
+* **Who can see it:** only approved bot users. The page sends Telegram's signed session with every request; the Worker
+  checks the signature with the bot token and then the person's status. Opened in a normal browser it only says "open me in Telegram".
+* **Changing location in the app** saves it for the bot as well (same code as the chat). All other settings stay in the chat.
+* **Preview in a normal browser:** `https://<your-worker>/app/?demo=sunny` (also `cloudy`, `rainy`, `windy`, `storm`, `night`;
+  add `&lang=ms` or `&lang=zh`). It is clearly labelled as demo data and reads nothing from the database.
+* **Air quality** is the same US AQI as in the chat report; the card says that it can differ from Malaysia's official API (IPU).
+* No framework and no build step: `public/app/` is plain HTML, CSS and JavaScript (about 76 KB before compression).
+
+Design notes, requirements, fallbacks and test evidence are in `docs/`.
 
 ## Alerts in detail
 
@@ -109,6 +129,7 @@ Users can find their ID by messaging [@userinfobot](https://t.me/userinfobot). I
 | `/hourly` | Next 12 hours with rain-chance bars |
 | `/tomorrow` | Tomorrow's forecast |
 | `/week` | 7-day outlook |
+| `/app` | Open the weather dashboard (mini app) |
 | `/warnings` | Official MetMalaysia warnings active for your state |
 | `/city` | Change location (or just type a city name) |
 | `/daily` | Turn the morning report on or off |
@@ -127,6 +148,7 @@ Users can find their ID by messaging [@userinfobot](https://t.me/userinfobot). I
 | `WAQI_TOKEN` | secret, optional | Enables measured AQI from the nearest station |
 | `ACCESS_MODE` | var in `wrangler.jsonc` | `approval` (default), `open` or `closed` |
 | `DEFAULT_DAILY_TIME` | var in `wrangler.jsonc` | Default morning time for new users, 24h. Default `08:30` |
+| `APP_URL` | var, optional | The Worker's public `https://…` origin, for the dashboard button. Normally not needed: `/setup` remembers it |
 | `QUIET_HOURS` | var in `wrangler.jsonc` | Alerts are paused between these local hours, `"22:00-06:30"` by default, or `"off"` |
 
 ## Deploy to Cloudflare (step by step)
@@ -190,10 +212,13 @@ npm test                  # ~170 unit tests (formatting, translations, schedule,
 npm run typecheck
 npm run test:integration  # end-to-end, ~2 minutes, no internet needed
 npm run test:live         # checks against the REAL weather services (needs internet)
+npm run test:e2e          # mini app in a real browser (Playwright + your installed Chrome), ~3 minutes, no internet needed
 ```
 
 * `test:integration` runs the real Worker in Cloudflare's runtime with a local database, a mock Telegram and a **controllable mock of every weather service**, then plays a full multi-user scenario: approval, all four views, every settings page, units, languages, GPS, rain and AQI alerts, outages and the backup source, inline mode, and morning + evening reports delivered across two timezones.
 * `test:live` compares the backup source and the sunrise/sunset maths against Open-Meteo in nine cities (including half-hour and date-line timezones), renders every view from real data, and parses the real MetMalaysia feed.
+
+* `test:e2e` starts the real Worker with the same mocks and drives the mini app in Chrome: sign-in and refusals, every card, changing location, each failure in `docs/FALLBACKS.md`, accessibility scans in light and dark, and seven screen sizes. Screenshots land in `test-results/shots/`. To look at the page yourself: `node scripts/e2e-server.mjs`, then open `http://127.0.0.1:18790/app/?demo=rainy`.
 
 To chat with the bot from your computer: copy `.dev.vars.example` to `.dev.vars`, fill it in, run `npm run db:migrate:local` and `npm run dev`, then expose the local port with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8787`) and call `/setup` against the tunnel URL. For normal use, deploying is simpler.
 
@@ -216,6 +241,8 @@ To chat with the bot from your computer: copy `.dev.vars.example` to `.dev.vars`
 | New users never get approved | Is your Telegram ID in `ADMIN_IDS`? Admins receive the Approve/Deny message |
 | Daily report missing | `/settings` → Alerts & reports, or `/daily`, should show 🔔 ON; check the user's city timezone. `npx wrangler tail` shows `daily_done` lines each run |
 | No alerts arriving | They are off by default; turn them on in Settings. They also pause 22:00–06:30 (`QUIET_HOURS`) and have a 3-hour cooldown |
+| No **📱 Open dashboard** button | Open `/setup` once after deploying (the bot learns its HTTPS address there), or set `APP_URL` |
+| Dashboard says "session has expired" | Close it and open it again from the bot (a session is accepted for 24 hours). After rotating the bot token, old sessions stop working by design |
 | Inline mode shows nothing | Run `/setinline` in @BotFather, and open `/setup` again after deploying |
 | No official warnings arrive | Is the person in Malaysia, with warnings ON (Settings → Alerts)? `/warnings` shows what is active for their state. A warning that lists only other districts of their state is skipped on purpose. `npx wrangler tail` shows `warnings_done` lines |
 | `/status` says the cron stalled | The Worker's cron trigger stopped: check the Workers dashboard and redeploy |
@@ -244,6 +271,13 @@ src/
   broadcast.ts   admin broadcast (preview, confirm, batched delivery)
   stats.ts       counters, cron heartbeat and the /status page
   telegram.ts    Bot API client
+  miniapp.ts     mini app API: Telegram signature check, dashboard view-model, scene rule
+  location.ts    saving a location (shared by the chat and the mini app)
+  appurl.ts      where the mini app lives (remembered by /setup)
+  demo.ts        synthetic data for the mini app preview
+public/          the mini app itself (app/), the custom 404 page, security headers (_headers)
+docs/            requirements, design note, fallbacks, traceability, verification
+tests/e2e/       browser tests (Playwright)
 migrations/      D1 schema (0001 users, 0002 preferences + alerts, 0003 warnings + admin store)
 test/            unit tests + a recorded real MET Norway response
 scripts/         end-to-end test, mock weather services, live checks
@@ -254,4 +288,5 @@ wrangler.jsonc   Worker configuration
 
 * Never commit `secrets.json`, `.dev.vars` or `.env` (all git-ignored). Keep real tokens only in Cloudflare secrets.
 * If a token is exposed, revoke it: `/revoke` in @BotFather, then update the secret.
+* The mini app's API only answers requests carrying a valid Telegram-signed session of an approved user. The page is served with a strict Content-Security-Policy (no inline scripts or styles).
 * The webhook only accepts requests carrying `WEBHOOK_SECRET`. Keep `ACCESS_MODE` on `approval` or `closed` unless you want a public bot.

@@ -68,18 +68,28 @@ const hr = (iso: string, p: Prefs) => i18n.hourLabel(iso, p.lang, p.clock);
 const rangeOf = (w: Window, p: Prefs) => i18n.rangeLabel(w.start, w.end, p.lang, p.clock);
 
 // ---------------------------------------------------------------- sections
-function rainOutlook(r: Report, p: Prefs): string {
+export type RainLevel = "now" | "likely" | "chance" | "none";
+
+/** The 6-hour rain outlook as plain words (shared by the chat report and the mini app). `more` continues `text`. */
+export function rainSummary(r: Report, p: Prefs): { level: RainLevel; text: string; more: string } {
   const lang = p.lang;
   const all = nextHours(r, 7);
   const rows = all.slice(1).length ? all.slice(1) : all;
   const peak = rows.reduce<(typeof rows)[number] | null>((best, x) => (best === null || x.prob > best.prob ? x : best), null);
   if (isRainingNow(r)) {
-    const more = peak && peak.prob >= 40 ? t(lang, "raining_more", { p: peak.prob }) : "";
-    return `🌧 <b>${t(lang, "raining_now")}</b>${more}`;
+    return { level: "now", text: t(lang, "raining_now"), more: peak && peak.prob >= 40 ? t(lang, "raining_more", { p: peak.prob }) : "" };
   }
-  if (peak && peak.prob >= 60) return `☔ <b>${t(lang, "rain_likely", { h: hr(peak.time, p), p: peak.prob })}</b>`;
-  if (peak && peak.prob >= 30) return `🌦 ${t(lang, "rain_chance", { h: hr(peak.time, p), p: peak.prob })}`;
-  return `✅ ${t(lang, "rain_none")}`;
+  if (peak && peak.prob >= 60) return { level: "likely", text: t(lang, "rain_likely", { h: hr(peak.time, p), p: peak.prob }), more: "" };
+  if (peak && peak.prob >= 30) return { level: "chance", text: t(lang, "rain_chance", { h: hr(peak.time, p), p: peak.prob }), more: "" };
+  return { level: "none", text: t(lang, "rain_none"), more: "" };
+}
+
+function rainOutlook(r: Report, p: Prefs): string {
+  const s = rainSummary(r, p);
+  if (s.level === "now") return `🌧 <b>${s.text}</b>${s.more}`;
+  if (s.level === "likely") return `☔ <b>${s.text}</b>`;
+  if (s.level === "chance") return `🌦 ${s.text}`;
+  return `✅ ${s.text}`;
 }
 
 function airBlock(r: Report, p: Prefs): string[] {
@@ -98,24 +108,37 @@ function airBlock(r: Report, p: Prefs): string[] {
     if (aq.dominant) extras.push(t(lang, "pollutant", { p: esc(aq.dominant) }));
     if (extras.length) lines.push(extras.join(" · "));
   }
-  const o = aqiOutlook(r);
-  // The outlook is the MODEL's. If a measured station reading disagrees a lot with the model's current value,
-  // the model's numbers would contradict the headline ("AQI 160" then "steady around 70"), so leave it out.
-  if (o && !(aq?.station && Math.abs(aq.aqi - o.base) > 15)) {
+  const o = airOutlookInfo(r, p);
+  if (o) {
     const icon = o.kind === "rising" ? "📈" : o.kind === "falling" ? "📉" : "➡️";
-    lines.push(`${icon} ${t(lang, `aqi_${o.kind}`, { aqi: o.aqi, h: hr(o.time, p) })}`);
+    lines.push(`${icon} ${o.text}`);
   }
   return lines;
 }
 
-function bestBlock(r: Report, p: Prefs): string {
+/** The AQI outlook sentence (shared by the chat report and the mini app), or null when there is none worth showing. */
+export function airOutlookInfo(r: Report, p: Prefs): { kind: "rising" | "falling" | "steady"; text: string } | null {
+  const aq = r.aq;
+  const o = aqiOutlook(r);
+  // The outlook is the MODEL's. If a measured station reading disagrees a lot with the model's current value,
+  // the model's numbers would contradict the headline ("AQI 160" then "steady around 70"), so leave it out.
+  if (!o || (aq?.station && Math.abs(aq.aqi - o.base) > 15)) return null;
+  return { kind: o.kind, text: t(p.lang, `aqi_${o.kind}`, { aqi: o.aqi, h: hr(o.time, p) }) };
+}
+
+/** "Today: 5–10 PM" / "No comfortable window left today" + "Tomorrow: …" (shared by the chat report and the mini app). */
+export function bestLines(r: Report, p: Prefs): string[] {
   const lang = p.lang;
   const b = bestOutside(r);
   const lines: string[] = [];
   if (b.today) lines.push(t(lang, "best_today", { r: rangeOf(b.today, p) }));
   else if (b.today === null) lines.push(t(lang, "best_none_today"));
   if (!b.today) lines.push(b.tomorrow ? t(lang, "best_tomorrow", { r: rangeOf(b.tomorrow, p) }) : t(lang, "best_none_tomorrow"));
-  return `🏃 <b>${t(lang, "sec_best")}</b>\n${lines.join("\n")}\n<i>${t(lang, "best_hint")}</i>`;
+  return lines;
+}
+
+function bestBlock(r: Report, p: Prefs): string {
+  return `🏃 <b>${t(p.lang, "sec_best")}</b>\n${bestLines(r, p).join("\n")}\n<i>${t(p.lang, "best_hint")}</i>`;
 }
 
 export function tips(r: Report, lang: Lang): string[] {
@@ -176,20 +199,27 @@ function forecastLines(r: Report, p: Prefs): string[] {
   return lines;
 }
 
-function trendLine(r: Report, p: Prefs): string | null {
+/** "3° warmer than yesterday", or null when the difference is too small to mention or yesterday is unknown. */
+export function trendInfo(r: Report, p: Prefs): { warmer: boolean; text: string } | null {
   const delta = trend(r);
   if (delta == null || Math.abs(delta) < 2) return null;
-  return (delta > 0 ? "📈 " : "📉 ") + t(p.lang, delta > 0 ? "trend_warmer" : "trend_cooler", { d: deltaDisplay(delta, p) });
+  return { warmer: delta > 0, text: t(p.lang, delta > 0 ? "trend_warmer" : "trend_cooler", { d: deltaDisplay(delta, p) }) };
 }
 
-function sourceText(r: Report, p: Prefs): string {
+function trendLine(r: Report, p: Prefs): string | null {
+  const info = trendInfo(r, p);
+  return info ? (info.warmer ? "📈 " : "📉 ") + info.text : null;
+}
+
+/** `escape` is for the station name: Telegram HTML needs it escaped, the mini app's JSON does not. */
+export function sourceText(r: Report, p: Prefs, escape: (s: string) => string = esc): string {
   let src = t(p.lang, r.source === "met-no" ? "src_weather_backup" : "src_weather");
   const aq = r.aq;
   if (aq) {
     src +=
       " · " +
       (aq.station
-        ? t(p.lang, "src_air_station", { name: esc(aq.station), km: (aq.km ?? 0).toFixed(0) })
+        ? t(p.lang, "src_air_station", { name: escape(aq.station), km: (aq.km ?? 0).toFixed(0) })
         : t(p.lang, "src_air_model"));
   }
   return src;
@@ -437,12 +467,12 @@ export function welcomeMessage(lang: Lang, firstName: string, placeLabelText: st
 export { RAIN_CODES, STORM_CODES };
 
 // ------------------------------------------------------------ official warnings
-const wTitle = (w: Warning, lang: Lang) => (lang === "ms" ? w.titleBm : w.titleEn);
-const wText = (w: Warning, lang: Lang) => (lang === "ms" ? w.textBm : w.textEn);
-const wInstruction = (w: Warning, lang: Lang) => (lang === "ms" ? w.instructionBm : w.instructionEn);
+export const wTitle = (w: Warning, lang: Lang) => (lang === "ms" ? w.titleBm : w.titleEn);
+export const wText = (w: Warning, lang: Lang) => (lang === "ms" ? w.textBm : w.textEn);
+export const wInstruction = (w: Warning, lang: Lang) => (lang === "ms" ? w.instructionBm : w.instructionEn);
 
 /** "10:00 AM", or "Thu 10:00 AM" when it isn't today. `nowLocal` is the local "YYYY-MM-DDTHH:MM". */
-function wLabel(iso: string, p: Prefs, nowLocal: string): string {
+export function wLabel(iso: string, p: Prefs, nowLocal: string): string {
   const time = i18n.clock(iso, p.lang, p.clock);
   return iso.slice(0, 10) === nowLocal.slice(0, 10) ? time : `${i18n.weekday(iso, p.lang, true)} ${time}`;
 }

@@ -1,6 +1,8 @@
 /** Telegram update handling: access control, commands, buttons, settings, GPS, city search, inline mode, admin tools. */
+import { getAppUrl } from "./appurl";
 import { lastSentAfterChange } from "./daily";
-import { getUser, insertUser, listUsers, patchUser, placeOf, setLocation, toggleSection, type UserPatch } from "./db";
+import { savePlace } from "./location";
+import { getUser, insertUser, listUsers, patchUser, placeOf, toggleSection, type UserPatch } from "./db";
 import { SECTIONS, inlineCard, weatherMessage, welcomeMessage } from "./format";
 import { LANGS, normLang, t } from "./i18n";
 import * as kb from "./keyboards";
@@ -21,12 +23,14 @@ interface Ctx {
   env: Env;
   tg: Telegram;
   wx: WeatherService;
+  /** The mini app's address, or null when it isn't known yet (then no "Open dashboard" button is shown). */
+  appUrl: string | null;
 }
 
 export const isAdmin = (env: Env, id: number) => parseIdList(env.ADMIN_IDS).includes(id);
 
 // ------------------------------------------------------------- bot commands
-const USER_COMMANDS = ["weather", "hourly", "tomorrow", "week", "warnings", "city", "daily", "settime", "evening", "settings", "help"] as const;
+const USER_COMMANDS = ["weather", "hourly", "tomorrow", "week", "app", "warnings", "city", "daily", "settime", "evening", "settings", "help"] as const;
 const ADMIN_COMMANDS: BotCommand[] = [
   { command: "users", description: "Admin: list users" },
   { command: "allow", description: "Admin: allow a user, /allow 123456" },
@@ -58,8 +62,9 @@ const quiet = async (p: Promise<unknown>) => {
 
 // ---------------------------------------------------------------- entry point
 export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
-  const c: Ctx = { env, tg: new Telegram(env), wx: makeWeather(env) };
+  const c: Ctx = { env, tg: new Telegram(env), wx: makeWeather(env), appUrl: null };
   try {
+    c.appUrl = await getAppUrl(env);
     if (update.callback_query) await onCallback(c, update.callback_query);
     else if (update.message) await onMessage(c, update.message);
     else if (update.inline_query) await onInline(c, update.inline_query);
@@ -175,6 +180,10 @@ async function onCommand(c: Ctx, user: User, text: string, from: TgUser): Promis
       return sendReport(c, user, "week");
     case "warnings":
       return sendWarnings(c, user);
+    case "app":
+      return void (await (c.appUrl
+        ? c.tg.sendMessage(user.chatId, t(user.lang, "miniapp_open"), kb.appKeyboard(user.lang, c.appUrl))
+        : c.tg.sendMessage(user.chatId, t(user.lang, "miniapp_off"))));
     case "city":
       return sendCityMenu(c, user);
     case "settings":
@@ -221,7 +230,7 @@ async function onCommand(c: Ctx, user: User, text: string, from: TgUser): Promis
 async function sendReport(c: Ctx, user: User, view: kb.View): Promise<void> {
   await quiet(c.tg.sendChatAction(user.chatId));
   try {
-    const { text, markup } = await buildView(c.wx, user, view);
+    const { text, markup } = await buildView(c.wx, user, view, { appUrl: c.appUrl });
     await c.tg.sendMessage(user.chatId, text, markup);
   } catch (e) {
     if (!(e instanceof WeatherError)) throw e;
@@ -243,17 +252,9 @@ async function sendSettings(c: Ctx, user: User): Promise<void> {
 // ---------------------------------------------------------------- location
 /** Validate a place by fetching its weather, persist it, and return the report message. */
 async function applyPlace(c: Ctx, user: User, place: Place): Promise<{ text: string; markup: Markup; user: User }> {
-  // No backup source here: it can't tell us the timezone we are about to save.
-  const report = await c.wx.fetchReport(place, true, { allowFallback: false });
-  place.tz = report.wx.timezone;
-  let u = await setLocation(c.env.DB, user.chatId, place);
-  // The timezone may have changed: don't fire a "late" report right after moving.
-  u = await patchUser(c.env.DB, u.chatId, {
-    lastSent: lastSentAfterChange(u.tz, u.dailyTime),
-    lastEvening: lastSentAfterChange(u.tz, u.eveningTime),
-  });
+  const { user: u, report } = await savePlace(c.env, c.wx, user, place);
   const ribbon = `✅ <b>${t(u.lang, "ribbon_saved")}</b> ${esc(placeLabel(place))}`;
-  return { text: weatherMessage(report, prefsOf(u), ribbon), markup: kb.reportKeyboard(u, "now"), user: u };
+  return { text: weatherMessage(report, prefsOf(u), ribbon), markup: kb.reportKeyboard(u, "now", c.appUrl), user: u };
 }
 
 /** The user's saved place, renamed into `lang` when that can be done reliably. */
@@ -352,7 +353,7 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
 
   try {
     if (data.startsWith("v:") || data.startsWith("r:")) {
-      const { text, markup } = await buildView(c.wx, user, kb.asView(data.slice(2)), { force: data[0] === "r" });
+      const { text, markup } = await buildView(c.wx, user, kb.asView(data.slice(2)), { force: data[0] === "r", appUrl: c.appUrl });
       if (await edit(c, q, text, markup, lang)) await ack(data[0] === "r" ? t(lang, "toast_updated") : undefined);
     } else if (data === "chg") {
       await ack();
@@ -423,7 +424,7 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
       const view = kb.asView(data.slice(6));
       const on = !user.dailyOn;
       const u = await patchUser(c.env.DB, chatId, { dailyOn: on, ...(on ? { lastSent: lastSentAfterChange(user.tz, user.dailyTime) } : {}) });
-      await c.tg.editReplyMarkup(chatId, msg.message_id, kb.reportKeyboard(u, view));
+      await c.tg.editReplyMarkup(chatId, msg.message_id, kb.reportKeyboard(u, view, c.appUrl));
       await ack(t(lang, u.dailyOn ? "toast_daily_on" : "toast_daily_off"));
     } else {
       await ack();

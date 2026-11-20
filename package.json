@@ -10,12 +10,15 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "node scripts/integration.mjs",
+    "test:e2e": "playwright test",
     "db:migrate:local": "wrangler d1 migrations apply skybrief --local",
     "db:migrate:remote": "wrangler d1 migrations apply skybrief --remote",
     "test:live": "node scripts/live.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@cloudflare/workers-types": "^5.20261103.1",
+    "@playwright/test": "^1.65.1",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0",
     "wrangler": "^4.156.2"

@@ -103,6 +103,11 @@ export class Telegram {
     });
   }
 
+  /** The button next to the message box: the mini app, or back to the command list. Default for every chat. */
+  setChatMenuButton(button: { type: "web_app"; text: string; web_app: { url: string } } | { type: "commands" }) {
+    return this.call("setChatMenuButton", { menu_button: button });
+  }
+
   setWebhook(url: string, secretToken: string) {
     return this.call("setWebhook", {
       url,

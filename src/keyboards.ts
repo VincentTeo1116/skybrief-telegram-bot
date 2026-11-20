@@ -29,7 +29,8 @@ export type View = "now" | "hourly" | "tomorrow" | "week";
 export const VIEWS: readonly View[] = ["now", "hourly", "tomorrow", "week"];
 export const asView = (s: string): View => (VIEWS.includes(s as View) ? (s as View) : "now");
 
-export function reportKeyboard(u: User, view: View = "now"): Markup {
+/** `appUrl` = the mini app's HTTPS address; when known, a button that opens the dashboard is added as the last row. */
+export function reportKeyboard(u: User, view: View = "now", appUrl?: string | null): Markup {
   const lang = u.lang;
   const nav = (v: View, key: string) => btn(mark(v === view, t(lang, key)), `v:${v}`);
   const daily = u.dailyOn ? t(lang, "b_daily_on", { time: u.dailyTime }) : t(lang, "b_daily_off");
@@ -39,8 +40,16 @@ export function reportKeyboard(u: User, view: View = "now"): Markup {
       [nav("tomorrow", "b_tomorrow"), nav("week", "b_week")],
       [btn(t(lang, "b_refresh"), `r:${view}`), btn(t(lang, "b_change"), "chg")],
       [btn(t(lang, "btn_settings"), "set"), btn(daily, `daily:${view}`)],
+      ...(appUrl ? [[appButton(lang, appUrl)]] : []),
     ],
   };
+}
+
+/** Opens the mini app inside Telegram (only valid in private chats, which is the only place the bot answers). */
+export const appButton = (lang: Lang, appUrl: string) => ({ text: t(lang, "b_app"), web_app: { url: appUrl } });
+
+export function appKeyboard(lang: Lang, appUrl: string): Markup {
+  return { inline_keyboard: [[appButton(lang, appUrl)]] };
 }
 
 export function locationMenu(lang: Lang): Markup {

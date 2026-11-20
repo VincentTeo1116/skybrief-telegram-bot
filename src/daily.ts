@@ -3,6 +3,7 @@
  * THEIR chosen time (so users in different cities/timezones each get their own morning), for two optional slots:
  *   morning: today's report            evening: tomorrow's outlook
  */
+import { getAppUrl } from "./appurl";
 import { claimDaily, dailyCandidates, patchUser, type Slot } from "./db";
 import { t } from "./i18n";
 import { count } from "./stats";
@@ -81,6 +82,7 @@ export async function runDaily(env: Env, now = new Date()): Promise<{ due: numbe
 
   const tg = new Telegram(env);
   const wx = makeWeather(env);
+  const appUrl = await getAppUrl(env);
   const refreshed = new Set<string>(); // first user per city gets fresh data; the rest reuse it
   let sent = 0;
   let failed = 0;
@@ -95,6 +97,7 @@ export async function runDaily(env: Env, now = new Date()): Promise<{ due: numbe
       const { text, markup } = await buildView(wx, u, cfg.view, {
         force: !refreshed.has(cityKey),
         ribbon: `${slot === "morning" ? "☀️" : "🌙"} <b>${t(u.lang, cfg.ribbonKey)}</b>`,
+        appUrl,
       });
       refreshed.add(cityKey);
       await tg.sendMessage(u.chatId, text, markup);

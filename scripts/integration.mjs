@@ -148,6 +148,7 @@ const vars = {
   METNO_URL: `${WX}/metno`,
   WARNINGS_URL: `${WX}/warnings`,
   HEALTH_EVERY_MINUTE: "1",
+  APP_URL: "https://skybrief.test", // the mini app's public address (Telegram only accepts HTTPS for web-app buttons)
 };
 worker = spawn(
   "npx",
@@ -203,6 +204,27 @@ try {
   check("navigation: Today / Hourly / Tomorrow / 7-day + Refresh + Settings", ["v:now", "v:hourly", "v:tomorrow", "v:week", "r:now", "set", "chg", "daily:now"].every((d) => btn(report, d)));
   check("current view (Today) is marked", btn(report, "v:now").text.startsWith("● "));
   check("admin gets the full command menu incl. admin commands", since(n).some((c) => c.method === "setMyCommands" && ["allow", "tomorrow", "evening"].every((x) => JSON.stringify(c.body.commands).includes(x))));
+
+  // =========================================================== 2b. mini app entry points
+  console.log("\nMini app: the ways in from the chat");
+  const appBtn = buttons(report).find((b) => b.web_app);
+  check("report has an 'Open dashboard' button that opens the mini app", appBtn?.web_app.url === "https://skybrief.test/app/" && appBtn.text.includes("Open dashboard"), JSON.stringify(appBtn));
+  check("the mini app button is the last row (nothing else moved)", report.body.reply_markup.inline_keyboard.at(-1)[0] === appBtn);
+  n = mark();
+  await say(ADMIN, "/app");
+  const appMsg = await waitFor(() => sentTo(n, ADMIN, (c) => buttons(c).some((b) => b.web_app))[0]);
+  check("/app sends a button that opens the dashboard", !!appMsg && buttons(appMsg)[0].web_app.url === "https://skybrief.test/app/");
+  check("/app is in the command menu", since(0).some((c) => c.method === "setMyCommands" && JSON.stringify(c.body.commands).includes('"app"')));
+  check("/setup alone leaves the menu button alone", !calls.some((c) => c.method === "setChatMenuButton"));
+  n = mark();
+  const setup2 = await (await fetch(`${WORKER}/setup?key=${SECRET}&menu=app`)).json();
+  const menuCall = since(n).find((c) => c.method === "setChatMenuButton");
+  check("/setup?menu=app puts the mini app on the menu button", setup2.menuButton === "mini app" && menuCall?.body.menu_button?.web_app?.url === "https://skybrief.test/app/");
+  await fetch(`${WORKER}/setup?key=${SECRET}&menu=commands`);
+  check("/setup?menu=commands puts the command list back", calls.filter((c) => c.method === "setChatMenuButton").at(-1)?.body.menu_button?.type === "commands");
+  const dash = await fetch(`${WORKER}/api/app/dashboard`);
+  check("mini app API refuses a request without a Telegram session (401 JSON)", dash.status === 401 && (await dash.json()).error?.code === "unauthorized");
+  check("mini app page is served with a Content-Security-Policy", ((await fetch(`${WORKER}/app/`)).headers.get("content-security-policy") ?? "").includes("default-src 'none'"));
 
   // =========================================================== 3. views
   console.log("\nViews: tomorrow, 7-day, hourly");

@@ -112,15 +112,15 @@ export const T: Record<string, Row> = {
       "⚙️ 点击<b>设置</b>可选择显示内容并切换语言。",
   ],
   help: [
-    "<b>Commands</b>\n/weather: current weather &amp; air quality\n/hourly: next 12 hours\n/tomorrow: tomorrow's forecast\n/week: 7-day outlook\n/warnings: official weather warnings\n" +
+    "<b>Commands</b>\n/weather: current weather &amp; air quality\n/hourly: next 12 hours\n/tomorrow: tomorrow's forecast\n/week: 7-day outlook\n/app: weather dashboard\n/warnings: official weather warnings\n" +
       "/city: change location (or just type a city name)\n/daily: morning report on or off\n" +
       "/settime 07:45: change the morning report time\n/evening [19:00]: evening report (tomorrow's outlook)\n" +
       "/settings: sections, language, units, alerts\n/help: this message\n\n📍 Share your GPS location with the bottom button to auto-detect where you are.\n💡 Type @SkyBrief_AI_bot and a city in any chat to share its weather.",
-    "<b>Arahan</b>\n/weather: cuaca &amp; kualiti udara semasa\n/hourly: 12 jam akan datang\n/tomorrow: ramalan esok\n/week: ramalan 7 hari\n/warnings: amaran cuaca rasmi\n" +
+    "<b>Arahan</b>\n/weather: cuaca &amp; kualiti udara semasa\n/hourly: 12 jam akan datang\n/tomorrow: ramalan esok\n/week: ramalan 7 hari\n/app: papan pemuka cuaca\n/warnings: amaran cuaca rasmi\n" +
       "/city: tukar lokasi (atau taip nama bandar)\n/daily: hidup/matikan laporan pagi\n" +
       "/settime 07:45: tukar masa laporan pagi\n/evening [19:00]: laporan petang (ramalan esok)\n" +
       "/settings: bahagian, bahasa, unit, amaran\n/help: mesej ini\n\n📍 Kongsi lokasi GPS anda melalui butang di bawah untuk pengesanan automatik.\n💡 Taip @SkyBrief_AI_bot dan nama bandar dalam mana-mana sembang untuk berkongsi cuaca.",
-    "<b>命令</b>\n/weather：当前天气与空气质量\n/hourly：未来12小时\n/tomorrow：明天的预报\n/week：7天预报\n/warnings：官方天气警报\n" +
+    "<b>命令</b>\n/weather：当前天气与空气质量\n/hourly：未来12小时\n/tomorrow：明天的预报\n/week：7天预报\n/app：天气面板\n/warnings：官方天气警报\n" +
       "/city：更换位置（也可直接输入城市名）\n/daily：开启/关闭早间报告\n" +
       "/settime 07:45：修改早间报告时间\n/evening [19:00]：晚间报告（明天的预报）\n" +
       "/settings：内容、语言、单位、提醒\n/help：显示此帮助\n\n📍 点击底部按钮分享 GPS 位置，可自动定位。\n💡 在任意聊天中输入 @SkyBrief_AI_bot 加城市名，即可分享天气。",
@@ -412,6 +412,102 @@ export const T: Record<string, Row> = {
   cmd_evening: ["Evening report on/off or time", "Laporan petang hidup/mati atau masa", "晚间报告开关或时间"],
   cmd_warnings: ["Official weather warnings", "Amaran cuaca rasmi", "官方天气警报"],
   cmd_help: ["Show help", "Tunjuk bantuan", "查看帮助"],
+  cmd_app: ["Open the weather dashboard", "Buka papan pemuka cuaca", "打开天气面板"],
+  // ---- v2.3: mini app, chat side
+  b_app: ["📱 Open dashboard", "📱 Buka papan pemuka", "📱 打开天气面板"],
+  miniapp_open: [
+    "📱 Tap the button below to open your weather dashboard.",
+    "📱 Ketik butang di bawah untuk membuka papan pemuka cuaca anda.",
+    "📱 点击下方按钮，打开您的天气面板。",
+  ],
+  miniapp_off: [
+    "The dashboard isn't set up yet. Please ask the admin to finish the setup.",
+    "Papan pemuka belum disediakan. Sila minta pentadbir melengkapkan persediaan.",
+    "天气面板尚未启用，请联系管理员完成设置。",
+  ],
+  // ---- v2.3: mini app, on-screen text. Every "app_" row is sent to the page with the dashboard (see appStrings in miniapp.ts).
+  app_title: ["Weather in {p}", "Cuaca di {p}", "{p} 的天气"],
+  app_now: ["Now", "Kini", "现在"],
+  app_hourly: ["Next 24 hours", "24 jam akan datang", "未来24小时"],
+  app_forecast: ["Forecast", "Ramalan", "天气预报"],
+  app_days3: ["3 days", "3 hari", "3天"],
+  app_days7: ["7 days", "7 hari", "7天"],
+  app_details: ["Details", "Butiran", "详细数据"],
+  app_gusts: ["Gusts {w}", "Tiupan {w}", "阵风 {w}"],
+  app_pressure: ["Pressure", "Tekanan", "气压"],
+  app_sunrise: ["Sunrise", "Matahari terbit", "日出"],
+  app_sunset: ["Sunset", "Matahari terbenam", "日落"],
+  app_uv_index: ["UV index", "Indeks UV", "紫外线指数"],
+  app_rain_chance: ["Chance of rain", "Kebarangkalian hujan", "降雨概率"],
+  app_high: ["High", "Tertinggi", "最高"],
+  app_low: ["Low", "Terendah", "最低"],
+  app_weekend: ["Weekend", "Hujung minggu", "周末"],
+  app_aqi_scale: ["AQI {n} on a scale of 0 to 500", "AQI {n} pada skala 0 hingga 500", "AQI {n}（范围 0 至 500）"],
+  app_aqi_note: [
+    "US AQI scale. It can differ from Malaysia's official API (IPU) readings.",
+    "Skala AQI Amerika Syarikat. Mungkin berbeza daripada bacaan IPU rasmi Malaysia.",
+    "采用美国 AQI 标准，可能与马来西亚官方空气污染指数（API / IPU）读数不同。",
+  ],
+  app_refresh: ["Refresh", "Muat semula", "刷新"],
+  app_updated: ["Updated", "Dikemas kini", "已更新"],
+  app_change_city: ["Change location", "Tukar lokasi", "更换位置"],
+  app_city_hint: [
+    "This also changes the location of your daily report.",
+    "Ini juga menukar lokasi laporan harian anda.",
+    "这也会更改每日报告的位置。",
+  ],
+  app_search_label: ["Search for a city", "Cari bandar", "搜索城市"],
+  app_search_ph: ["e.g. Ipoh or Tokyo", "cth. Ipoh atau Tokyo", "例如：怡保 或 Tokyo"],
+  app_search_btn: ["Search", "Cari", "搜索"],
+  app_results: ["Results", "Hasil carian", "搜索结果"],
+  app_shortcuts: ["Shortcuts", "Pintasan", "快捷城市"],
+  app_no_results: [
+    "No place found. Try a nearby big city, or “City, Country”.",
+    "Tiada tempat ditemui. Cuba bandar besar berdekatan, atau “Bandar, Negara”.",
+    "找不到该地点。请试试附近的大城市，或输入“城市, 国家”。",
+  ],
+  app_saved: ["Location saved", "Lokasi disimpan", "位置已保存"],
+  app_close: ["Close", "Tutup", "关闭"],
+  app_working: ["Please wait…", "Sila tunggu…", "请稍候…"],
+  app_stale: [
+    "Showing saved data from {t}. I couldn't update just now.",
+    "Memaparkan data tersimpan dari {t}. Tidak dapat dikemas kini buat masa ini.",
+    "正在显示 {t} 保存的数据，暂时无法更新。",
+  ],
+  app_retry: ["Try again", "Cuba lagi", "重试"],
+  app_demo: [
+    "Demo data. This is not a real forecast.",
+    "Data demo. Ini bukan ramalan sebenar.",
+    "演示数据，并非真实预报。",
+  ],
+  app_err_wx: [
+    "I couldn't reach the weather service. Please try again in a moment.",
+    "Tidak dapat menghubungi perkhidmatan cuaca. Sila cuba sebentar lagi.",
+    "无法连接天气服务，请稍后再试。",
+  ],
+  app_err_search: [
+    "City search is unavailable right now. Please try again shortly.",
+    "Carian bandar tidak tersedia buat masa ini. Sila cuba sebentar lagi.",
+    "城市搜索暂时不可用，请稍后再试。",
+  ],
+  app_err_query: ["Type at least 2 letters.", "Taip sekurang-kurangnya 2 huruf.", "请至少输入 2 个字符。"],
+  app_err_expired: [
+    "Your session has expired. Close the dashboard and open it again from the bot.",
+    "Sesi anda telah tamat. Tutup papan pemuka dan buka semula dari bot.",
+    "会话已过期。请关闭面板，然后从机器人重新打开。",
+  ],
+  app_err_start: [
+    "Send /start to the SkyBrief bot first, then open the dashboard again.",
+    "Hantar /start kepada bot SkyBrief dahulu, kemudian buka papan pemuka semula.",
+    "请先向 SkyBrief 机器人发送 /start，然后重新打开面板。",
+  ],
+  app_err_pending: [
+    "Your access request is waiting for the admin's approval.",
+    "Permintaan akses anda sedang menunggu kelulusan pentadbir.",
+    "您的使用申请正在等待管理员批准。",
+  ],
+  app_err_denied: ["You don't have access to this dashboard.", "Anda tiada akses kepada papan pemuka ini.", "您无权访问此面板。"],
+  app_err_generic: ["Something went wrong on my side. Please try again.", "Berlaku masalah di pihak saya. Sila cuba lagi.", "出了点问题，请再试一次。"],
 };
 
 // WMO weather code -> [English, Bahasa Melayu, 中文]

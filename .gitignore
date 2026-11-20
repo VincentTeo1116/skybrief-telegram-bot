@@ -37,6 +37,8 @@ yarn-error.log*
 # ============================================================
 coverage/
 .vitest/
+test-results/
+playwright-report/
 
 # ============================================================
 # Logs & temp files

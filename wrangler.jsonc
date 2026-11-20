@@ -9,6 +9,14 @@
 			"* * * * *"
 		]
 	},
+	// The Telegram Mini App: static files in public/ (the dashboard is at /app/). A request that matches a file is
+	// served directly, without running the Worker; everything else (/webhook, /setup, /api/*) reaches the code.
+	// Keep "not_found_handling" at its default ("none"): the other modes would answer browser visits to /setup
+	// with a static page instead of running the Worker. The Worker serves public/404.html itself.
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS"
+	},
 	"d1_databases": [
 		{
 			// The code reads env.DB, so this name must stay "DB".

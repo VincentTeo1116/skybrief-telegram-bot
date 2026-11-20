@@ -23,7 +23,7 @@ export async function buildView(
   wx: WeatherService,
   user: User,
   view: View = "now",
-  opts: { force?: boolean; ribbon?: string } = {},
+  opts: { force?: boolean; ribbon?: string; appUrl?: string | null } = {},
 ): Promise<{ text: string; markup: Markup }> {
   const report = await wx.fetchReport(placeOf(user), opts.force ?? false);
   const p = prefsOf(user);
@@ -41,5 +41,5 @@ export async function buildView(
     default:
       text = weatherMessage(report, p, opts.ribbon, await userWarnings(wx, user));
   }
-  return { text, markup: reportKeyboard(user, view) };
+  return { text, markup: reportKeyboard(user, view, opts.appUrl) };
 }

@@ -18,7 +18,7 @@ const ternary = [...code.matchAll(/\bt\([^,]+,\s*[^"?]*\?\s*"([a-z0-9_]+)"\s*:\s
 // keys built from a known set (these loops are the only places keys are composed)
 const composed = [
   ...SECTIONS.map((s) => `sec_${s}`),
-  ...["weather", "hourly", "tomorrow", "week", "warnings", "city", "daily", "settime", "evening", "settings", "help"].map((c) => `cmd_${c}`),
+  ...["weather", "hourly", "tomorrow", "week", "app", "warnings", "city", "daily", "settime", "evening", "settings", "help"].map((c) => `cmd_${c}`),
   ...["rising", "falling", "steady"].map((k) => `aqi_${k}`),
   ...["morning", "afternoon", "evening"].map((k) => `p_${k}`),
   "ribbon_daily",
@@ -45,7 +45,9 @@ describe("translation coverage", () => {
     const used = new Set([...literal, ...ternary, ...composed]);
     // keys referenced through variables or from tests/config rather than a literal t(...) call
     const indirect = new Set<string>(["btn_now", "btn_city", "btn_loc", "btn_settings", "help", "welcome"]);
-    const dead = Object.keys(T).filter((k) => !used.has(k) && !indirect.has(k) && !code.includes(`"${k}"`) && !code.includes(`\`${k}`));
+    // "app_" rows are the mini app's on-screen text: they are sent to the page as a bundle and used by public/app/*.js.
+    // test/miniapp.test.ts checks those in both directions (nothing missing, nothing dead).
+    const dead = Object.keys(T).filter((k) => !k.startsWith("app_") && !used.has(k) && !indirect.has(k) && !code.includes(`"${k}"`) && !code.includes(`\`${k}`));
     expect(dead).toEqual([]);
   });
 });

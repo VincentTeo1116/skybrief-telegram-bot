@@ -11,6 +11,10 @@ export interface Env {
   DEFAULT_DAILY_TIME?: string;
   /** Alerts are paused during these local hours, "22:00-06:30" (default) or "off". */
   QUIET_HOURS?: string;
+  /** Static files of the mini app (public/). Absent in unit tests. */
+  ASSETS?: Fetcher;
+  /** Optional: the Worker's public HTTPS origin. Overrides the address remembered by /setup for the mini app button. */
+  APP_URL?: string;
 
   // ---- test hooks (never set in production)
   /** Point the Telegram client at a mock server. */
@@ -27,6 +31,8 @@ export interface Env {
   ALERTS_EVERY_MINUTE?: string;
   /** "1" = run the health probe on every cron tick instead of every 5 minutes. */
   HEALTH_EVERY_MINUTE?: string;
+  /** Milliseconds between forced refreshes from the mini app (default 60000). The browser tests set "0". */
+  APP_REFRESH_MS?: string;
 }
 
 export type Lang = "en" | "ms" | "zh";

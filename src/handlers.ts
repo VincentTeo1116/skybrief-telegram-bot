@@ -2,6 +2,7 @@
 import { getAppUrl } from "./appurl";
 import { lastSentAfterChange } from "./daily";
 import { savePlace } from "./location";
+import { setLanguage, settingsPatch } from "./settings";
 import { getUser, insertUser, listUsers, patchUser, placeOf, toggleSection, type UserPatch } from "./db";
 import { SECTIONS, inlineCard, weatherMessage, welcomeMessage } from "./format";
 import { LANGS, normLang, t } from "./i18n";
@@ -44,12 +45,21 @@ export function botCommands(lang: Lang, admin = false): BotCommand[] {
   return admin ? [...base, ...ADMIN_COMMANDS] : base;
 }
 
-async function setChatCommands(c: Ctx, chatId: number, lang: Lang): Promise<void> {
+async function setChatCommands(c: Pick<Ctx, "env" | "tg">, chatId: number, lang: Lang): Promise<void> {
   try {
     await c.tg.setMyCommands(botCommands(lang, isAdmin(c.env, chatId)), { chatId });
   } catch (e) {
     console.log(JSON.stringify({ event: "set_commands_failed", chatId, error: String(e) }));
   }
+}
+
+/**
+ * After a language change: the chat's bottom keyboard and command menu can only be replaced by sending a message.
+ * Used by the chat's language buttons and by the mini app's settings.
+ */
+export async function announceLanguage(c: Pick<Ctx, "env" | "tg">, chatId: number, lang: Lang): Promise<void> {
+  await c.tg.sendMessage(chatId, t(lang, "lang_changed"), kb.mainReplyKeyboard(lang));
+  await setChatCommands(c, chatId, lang);
 }
 
 const quiet = async (p: Promise<unknown>) => {
@@ -189,15 +199,14 @@ async function onCommand(c: Ctx, user: User, text: string, from: TgUser): Promis
     case "settings":
       return sendSettings(c, user);
     case "daily": {
-      const on = !user.dailyOn;
-      const u = await patchUser(c.env.DB, user.chatId, { dailyOn: on, ...(on ? { lastSent: lastSentAfterChange(user.tz, user.dailyTime) } : {}) });
+      const u = await patchUser(c.env.DB, user.chatId, settingsPatch(user, { dailyOn: !user.dailyOn }));
       const msg = u.dailyOn ? t(u.lang, "daily_on_msg", { time: u.dailyTime, tz: u.tz }) : t(u.lang, "daily_off_msg");
       return void (await c.tg.sendMessage(u.chatId, msg));
     }
     case "settime": {
       const hhmm = args.length === 1 ? normaliseTime(args[0]) : null; // "8:30 pm" (two words) is rejected, not read as 08:30
       if (!hhmm) return void (await c.tg.sendMessage(user.chatId, t(user.lang, "settime_usage")));
-      const u = await patchUser(c.env.DB, user.chatId, { dailyTime: hhmm, dailyOn: true, lastSent: lastSentAfterChange(user.tz, hhmm) });
+      const u = await patchUser(c.env.DB, user.chatId, settingsPatch(user, { dailyTime: hhmm }));
       return void (await c.tg.sendMessage(u.chatId, t(u.lang, "settime_ok", { time: hhmm, tz: u.tz })));
     }
     case "evening": {
@@ -205,10 +214,9 @@ async function onCommand(c: Ctx, user: User, text: string, from: TgUser): Promis
       if (args.length) {
         const hhmm = args.length === 1 ? normaliseTime(args[0]) : null;
         if (!hhmm) return void (await c.tg.sendMessage(user.chatId, t(user.lang, "evening_usage")));
-        patch = { eveningOn: true, eveningTime: hhmm, lastEvening: lastSentAfterChange(user.tz, hhmm) };
+        patch = settingsPatch(user, { eveningTime: hhmm });
       } else {
-        const on = !user.eveningOn;
-        patch = { eveningOn: on, ...(on ? { lastEvening: lastSentAfterChange(user.tz, user.eveningTime) } : {}) };
+        patch = settingsPatch(user, { eveningOn: !user.eveningOn });
       }
       const u = await patchUser(c.env.DB, user.chatId, patch);
       const msg = u.eveningOn ? t(u.lang, "evening_on_msg", { time: u.eveningTime, tz: u.tz }) : t(u.lang, "evening_off_msg");
@@ -255,21 +263,6 @@ async function applyPlace(c: Ctx, user: User, place: Place): Promise<{ text: str
   const { user: u, report } = await savePlace(c.env, c.wx, user, place);
   const ribbon = `✅ <b>${t(u.lang, "ribbon_saved")}</b> ${esc(placeLabel(place))}`;
   return { text: weatherMessage(report, prefsOf(u), ribbon), markup: kb.reportKeyboard(u, "now", c.appUrl), user: u };
-}
-
-/** The user's saved place, renamed into `lang` when that can be done reliably. */
-async function localisedPlace(c: Ctx, u: User, lang: Lang): Promise<Place> {
-  const p = placeOf(u);
-  const idx = matchPreset(p.lat, p.lon);
-  if (idx !== null) return { ...presetPlace(idx, lang), tz: p.tz };
-  try {
-    for (const cand of await c.wx.searchPlaces(p.name, 5, lang)) {
-      if (haversineKm(p.lat, p.lon, cand.lat, cand.lon) < 15) return { ...cand, lat: p.lat, lon: p.lon, tz: p.tz };
-    }
-  } catch {
-    /* keep the existing name */
-  }
-  return p;
 }
 
 async function onLocation(c: Ctx, user: User, lat: number, lon: number): Promise<void> {
@@ -370,13 +363,9 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
       if (!(code in LANGS)) return void (await ack());
       const newLang = normLang(code);
       if (newLang === lang) return void (await ack()); // already selected: nothing to redo
-      let u = await patchUser(c.env.DB, chatId, { lang: newLang });
-      const np = await localisedPlace(c, u, newLang);
-      if (np.name !== u.placeName || np.country !== u.country) u = await patchUser(c.env.DB, chatId, { placeName: np.name, country: np.country }); // rename only: keeps the saved state
+      const u = await setLanguage(c.env, c.wx, user, newLang);
       await showPage(u, "lang");
-      // The bottom keyboard and command menu can only be replaced by sending a message.
-      await c.tg.sendMessage(chatId, t(newLang, "lang_changed"), kb.mainReplyKeyboard(newLang));
-      await setChatCommands(c, chatId, newLang);
+      await announceLanguage(c, chatId, newLang);
     } else if (data.startsWith("u:")) {
       const [, kind, val] = data.split(":");
       const patch: UserPatch = {};
@@ -388,15 +377,10 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
     } else if (data.startsWith("al:")) {
       const [, kind, val] = data.split(":");
       let patch: UserPatch = {};
-      if (kind === "rain") patch = { rainAlerts: !user.rainAlerts, lastRainAlert: 0 };
-      else if (kind === "aqi" && (AQI_ALERT_LEVELS as readonly number[]).includes(Number(val))) {
-        patch = { aqiAlert: Number(val), aqiAlertActive: false, lastAqiAlert: 0 };
-      } else if (kind === "warn") {
-        patch = { warningsOn: !user.warningsOn };
-      } else if (kind === "eve") {
-        const on = !user.eveningOn;
-        patch = { eveningOn: on, ...(on ? { lastEvening: lastSentAfterChange(user.tz, user.eveningTime) } : {}) };
-      }
+      if (kind === "rain") patch = settingsPatch(user, { rainAlerts: !user.rainAlerts });
+      else if (kind === "aqi" && (AQI_ALERT_LEVELS as readonly number[]).includes(Number(val))) patch = settingsPatch(user, { aqiAlert: Number(val) });
+      else if (kind === "warn") patch = settingsPatch(user, { warningsOn: !user.warningsOn });
+      else if (kind === "eve") patch = settingsPatch(user, { eveningOn: !user.eveningOn });
       await showPage(Object.keys(patch).length ? await patchUser(c.env.DB, chatId, patch) : user, "alerts");
     } else if (data.startsWith("mute:")) {
       const kind = data.slice(5);
@@ -422,8 +406,7 @@ async function onCallback(c: Ctx, q: TgCallback): Promise<void> {
       await switchTo(place);
     } else if (data.startsWith("daily:")) {
       const view = kb.asView(data.slice(6));
-      const on = !user.dailyOn;
-      const u = await patchUser(c.env.DB, chatId, { dailyOn: on, ...(on ? { lastSent: lastSentAfterChange(user.tz, user.dailyTime) } : {}) });
+      const u = await patchUser(c.env.DB, chatId, settingsPatch(user, { dailyOn: !user.dailyOn }));
       await c.tg.editReplyMarkup(chatId, msg.message_id, kb.reportKeyboard(u, view, c.appUrl));
       await ack(t(lang, u.dailyOn ? "toast_daily_on" : "toast_daily_off"));
     } else {

@@ -45,6 +45,11 @@ add a build pipeline and weight for nothing. The sky is a `<canvas>` because rai
 | Search results | `users.search_json` (existing column) | Pick by index | FR-9 | Overwritten by the next search |
 | Saved location | `users` (existing columns) | FR-9 | FR-9 | Existing behaviour |
 | Mini app address | `meta.app_url` | Build the button | FR-1 | Overwritten by `/setup` |
+| Saved places (name, coordinates, timezone, state) | `users.places_json` (new column, migration 0004) | Switch between places | FR-12 | At most 5; removed by the person |
+| GPS position | Request body, memory only; the resulting place is saved like any other | Find the place | FR-17 | Not stored as such |
+| Picture card | Drawn on the device, uploaded once, forwarded to Telegram, never stored by us | Share | FR-18 | None on our side; it lives in the person's Telegram chat |
+
+Sent to third parties in v2.4: the picture card to Telegram (at the person's request). The IPU request carries no personal data (it downloads the whole station list).
 
 Nothing new is sent to third parties. No analytics, no cookies.
 
@@ -80,11 +85,14 @@ public/
     index.html        markup + SVG icon sprite
     app.css           tokens, layout (mobile-first), themes
     app.js            boot, API calls, rendering, location sheet
-    scene.js          the animated sky (canvas)
+    scene.js          the animated sky (canvas); `makePainter` is reused for the share card
+    card.js           the picture card for sharing (canvas)
     boot-strings.js   the four pre-server messages (en / ms / zh)
     icon.svg
 src/
   miniapp.ts          signature check, dashboard view-model, scene rule, /api/app/* routes
+  settings.ts         the rules for changing settings (shared by the chat and the app)
+  ipu.ts              Malaysia's official API (IPU) from the Department of Environment (optional)
   demo.ts             synthetic reports for the preview
   location.ts         save a location (shared by chat and app)
   appurl.ts           where the mini app lives (env or meta)

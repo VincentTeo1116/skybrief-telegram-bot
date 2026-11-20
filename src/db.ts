@@ -42,6 +42,7 @@ function toUser(r: Row): User {
     district: String(r.district ?? ""),
     warningsOn: r.warnings_on === undefined ? true : Number(r.warnings_on) === 1,
     warnSeen: String(r.warn_seen ?? "").split(",").filter(Boolean),
+    placesJson: String(r.places_json ?? ""),
   };
 }
 
@@ -106,6 +107,7 @@ export interface UserPatch {
   district?: string;
   warningsOn?: boolean;
   warnSeen?: string[];
+  placesJson?: string;
 }
 
 // Whitelist of patchable fields -> column names (never interpolate caller-provided keys into SQL).
@@ -141,6 +143,7 @@ const COLUMNS: Record<keyof UserPatch, string> = {
   district: "district",
   warningsOn: "warnings_on",
   warnSeen: "warn_seen",
+  placesJson: "places_json",
 };
 
 export async function patchUser(db: D1Database, chatId: number, patch: UserPatch): Promise<User> {

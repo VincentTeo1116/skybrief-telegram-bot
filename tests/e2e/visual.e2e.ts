@@ -64,11 +64,11 @@ test("FR-10/11: the demo follows the language asked for", async ({ page }) => {
   await openApp(page, { path: "/app/?demo=sunny&lang=zh" });
   await ready(page);
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
-  await expect(page.locator("#air .card-title")).toHaveText("空气质量");
+  await expect(page.locator("#air .card-title").first()).toHaveText("空气质量");
   await expect(page.locator("#demo-banner")).toContainText("演示数据");
   await page.goto("/app/?demo=sunny&lang=ms");
   await ready(page);
-  await expect(page.locator("#air .card-title")).toHaveText("Kualiti udara");
+  await expect(page.locator("#air .card-title").first()).toHaveText("Kualiti udara");
 });
 
 // ------------------------------------------------------------------ every screen size (NFR-3)
@@ -115,7 +115,7 @@ test("NFR-3: text at 200% still fits on a phone", async ({ page }) => {
   await page.evaluate(() => document.documentElement.style.setProperty("font-size", "200%", "important")); // CSSOM: the CSP forbids style tags
   await page.waitForTimeout(100);
   await page.screenshot({ path: `${SHOTS}/zoom-200-storm.png`, fullPage: true });
-  const wide = await page.evaluate(() => [...document.querySelectorAll("body *")].filter((e) => !e.closest(".hours") && e.getBoundingClientRect().right > document.documentElement.clientWidth + 1).map((e) => `${e.tagName}.${e.getAttribute("class")}`).slice(0, 6));
+  const wide = await page.evaluate(() => [...document.querySelectorAll("body *")].filter((e) => !e.closest(".hours-scroll, .place-chips") && e.getBoundingClientRect().right > document.documentElement.clientWidth + 1).map((e) => `${e.tagName}.${e.getAttribute("class")}`).slice(0, 6));
   expect(wide, "elements wider than the screen").toEqual([]);
   expect(await horizontalOverflow(page)).toBeLessThanOrEqual(1);
 });

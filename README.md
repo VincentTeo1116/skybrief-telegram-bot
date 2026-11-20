@@ -66,11 +66,15 @@ shows, as a dashboard, using the same data, the same rules and each person's own
   no dashboard button is shown. (Or set the `APP_URL` variable to the Worker's `https://…` origin.)
 * **Who can see it:** only approved bot users. The page sends Telegram's signed session with every request; the Worker
   checks the signature with the bot token and then the person's status. Opened in a normal browser it only says "open me in Telegram".
-* **Changing location in the app** saves it for the bot as well (same code as the chat). All other settings stay in the chat.
+* **Changing location in the app** saves it for the bot as well (same code as the chat). The last 5 places are remembered and appear as one-tap chips; **Use my current location** takes the position from Telegram or the browser.
+* **Settings in the app:** language, units, clock, morning and evening report times, rain / air-quality alerts and official warnings, with the same rules as the chat. (Report sections and compact mode stay in the chat: they only affect chat messages.)
+* **Official API (IPU):** for places in Malaysia the air card also shows the Department of Environment's reading from the nearest station (within 40 km, under 3 hours old). It comes from the service behind the Department's public map, which is not a documented API, so it is optional: if it is unavailable the block is simply absent. Set `IPU_URL` to `off` to disable it.
+* **Tap a day** in the forecast for its morning / afternoon / evening, rain, wind, UV, sun, air and tips. The next 24 hours have a temperature line.
+* **Share:** the share button draws a picture card of today's weather and sends it to your own chat with the bot; on Telegram 8.0 or newer it then opens Telegram's "share to a chat" picker.
 * **Preview in a normal browser:** `https://<your-worker>/app/?demo=sunny` (also `cloudy`, `rainy`, `windy`, `storm`, `night`;
   add `&lang=ms` or `&lang=zh`). It is clearly labelled as demo data and reads nothing from the database.
-* **Air quality** is the same US AQI as in the chat report; the card says that it can differ from Malaysia's official API (IPU).
-* No framework and no build step: `public/app/` is plain HTML, CSS and JavaScript (about 76 KB before compression).
+* **Air quality** is the same US AQI as in the chat report (alerts are based on it); the official IPU is shown beside it when available.
+* No framework and no build step: `public/app/` is plain HTML, CSS and JavaScript (about 116 KB before compression).
 
 Design notes, requirements, fallbacks and test evidence are in `docs/`.
 
@@ -148,6 +152,7 @@ Users can find their ID by messaging [@userinfobot](https://t.me/userinfobot). I
 | `WAQI_TOKEN` | secret, optional | Enables measured AQI from the nearest station |
 | `ACCESS_MODE` | var in `wrangler.jsonc` | `approval` (default), `open` or `closed` |
 | `DEFAULT_DAILY_TIME` | var in `wrangler.jsonc` | Default morning time for new users, 24h. Default `08:30` |
+| `IPU_URL` | var, optional | `off` stops the mini app from asking the Department of Environment for the official API (IPU) |
 | `APP_URL` | var, optional | The Worker's public `https://…` origin, for the dashboard button. Normally not needed: `/setup` remembers it |
 | `QUIET_HOURS` | var in `wrangler.jsonc` | Alerts are paused between these local hours, `"22:00-06:30"` by default, or `"off"` |
 
@@ -272,13 +277,15 @@ src/
   stats.ts       counters, cron heartbeat and the /status page
   telegram.ts    Bot API client
   miniapp.ts     mini app API: Telegram signature check, dashboard view-model, scene rule
-  location.ts    saving a location (shared by the chat and the mini app)
+  location.ts    saving a location and the list of saved places (shared by the chat and the mini app)
+  settings.ts    the rules for changing settings (shared by the chat and the mini app)
+  ipu.ts         Malaysia's official API (IPU) from the Department of Environment (optional)
   appurl.ts      where the mini app lives (remembered by /setup)
   demo.ts        synthetic data for the mini app preview
 public/          the mini app itself (app/), the custom 404 page, security headers (_headers)
 docs/            requirements, design note, fallbacks, traceability, verification
 tests/e2e/       browser tests (Playwright)
-migrations/      D1 schema (0001 users, 0002 preferences + alerts, 0003 warnings + admin store)
+migrations/      D1 schema (0001 users, 0002 preferences + alerts, 0003 warnings + admin store, 0004 saved places)
 test/            unit tests + a recorded real MET Norway response
 scripts/         end-to-end test, mock weather services, live checks
 wrangler.jsonc   Worker configuration

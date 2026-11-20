@@ -61,6 +61,50 @@ All of this was run on the developer machine (Windows 11, Node 24, installed Chr
 location sheet. Checked: hierarchy, clipping, overlap, contrast of text over the sky. Not viewed individually: the
 remaining generated screenshots (about 40).
 
+## v2.4 (settings, saved places, GPS, official IPU, day details, hourly chart, share card)
+
+Run on the same machine on 20 Nov 2026 after the v2.4 changes. Nothing was deployed.
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | Pass |
+| `npm test` | 319 passed, 7 skipped (live). 25 new in `test/features.test.ts` |
+| `npm run test:integration` | 177 passed, 0 failed (the chat's settings and language code now go through `settings.ts`) |
+| `npm run test:e2e` | 96 passed. 21 new in `tests/e2e/features.e2e.ts` |
+| Live IPU feed (`LIVE=1 npx vitest run test/live.test.ts -t IPU`) | Passed: more than 40 stations parsed, a fresh reading within 40 km of Kuala Lumpur, none for Singapore |
+| Size | 116 KB uncompressed, over the original 100 KB budget; the budget was raised to 130 KB and the reason recorded in NFR-8 |
+
+| ID | Status | Evidence |
+|---|---|---|
+| FR-12 | Verified | Chips switch places, order stays put, five at most, removal, active place protected, failure leaves everything as it was |
+| FR-13 | Verified locally | Every control exercised in the browser; values confirmed through the API; the chat is messaged on a language change; invalid changes refused whole. Not checked: a real daily report arriving at a time set in the app |
+| FR-14 | Verified | Mock feed end to end (Cheras 63, Tasek Ipoh 44 after switching place); real feed parsed in the live test |
+| FR-15 | Verified | Open, close, one at a time, keyboard, stays open when the list grows |
+| FR-16 | Verified | 24 points, aligned with the first column, no chart when temperatures are unknown. Looked at in screenshots |
+| FR-17 | Partly | Telegram's location service and the browser's were both simulated, as was a refusal. **No real device GPS, and no real Telegram permission prompt** |
+| FR-18 | Partly | The card is drawn (viewed: sunny, storm, real data), a real JPEG of 30-700 KB reaches the mock Telegram as a file upload, the prepared-message request has the right shape, and each fallback works. **Never sent to the real Telegram**: `sendPhoto` and `savePreparedInlineMessage` are untested against the real Bot API |
+
+Mutation checks (rule broken on purpose → test that failed → restored green):
+
+| Rule | Failed test |
+|---|---|
+| Unknown settings keys allowed | unit "refuses the whole change when any part is unknown or invalid" |
+| Stale IPU readings accepted | unit "no station within reach, a stale reading…" |
+| GPS coordinate range not checked | E2E "the server names the place itself and refuses impossible coordinates" |
+| JPEG check removed | E2E "only a JPEG of a sensible size is accepted" |
+| Active place may be removed | E2E "at most five; bad indexes and removing the active place are refused" |
+
+Bugs found and fixed in v2.4: the header overflowed at 200% text once it had three buttons (they now drop to their own row); the share card's degree sign was drawn at full size, the low/high numbers touched, and clouds reduced the contrast of the place name; one test of mine expected 89°F where the correct afternoon mean is 87°F (the code was right).
+
+Screenshots viewed: storm dashboard 390 px, settings sheet, day detail, share cards (sunny, storm, real data).
+
+Additional items **not verified** in v2.4:
+
+* Sharing, GPS and the language message against the **real Telegram** (see FR-17, FR-18 above). `Telegram.WebApp.shareMessage`, `LocationManager` and `savePreparedInlineMessage` were used as documented by Telegram, from memory; none was run against the real thing.
+* The IPU source is undocumented (A11). It works today; that says nothing about tomorrow.
+* The 10-second share limit is per Worker instance, so on Cloudflare (many instances) it is weaker than in the test.
+* The migration `0004_places.sql` was applied to local databases only.
+
 ## Not verified
 
 * **Inside a real Telegram client.** The page was driven with a stand-in for Telegram's script. Real `initData`, the back

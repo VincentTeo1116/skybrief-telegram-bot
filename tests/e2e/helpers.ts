@@ -31,6 +31,10 @@ export interface OpenOptions {
   initData?: string;
   scheme?: "light" | "dark";
   path?: string;
+  /** What Telegram's own location service answers (Telegram 8.0+). Omit for "this Telegram has no such service". */
+  gps?: { latitude: number; longitude: number } | "denied";
+  /** false = an older Telegram without shareMessage / LocationManager. */
+  modern?: boolean;
 }
 
 /** Open the mini app the way Telegram would: its bridge script is replaced by a stub that carries the session. */
@@ -45,7 +49,11 @@ export async function openApp(page: Page, o: OpenOptions = {}): Promise<string[]
   await page.addInitScript(
     (cfg) => {
       const noop = () => {};
-      (window as any).__tg = { header: "", back: false };
+      (window as any).__tg = { header: "", back: false, shared: "" };
+      const modern = cfg.modern;
+      const locationManager = cfg.gps && modern
+        ? { isInited: true, isLocationAvailable: true, init: (cb: () => void) => cb(), getLocation: (cb: (loc: unknown) => void) => cb(cfg.gps === "denied" ? null : cfg.gps) }
+        : undefined;
       (window as any).Telegram = {
         WebApp: {
           initData: cfg.initData,
@@ -54,6 +62,14 @@ export async function openApp(page: Page, o: OpenOptions = {}): Promise<string[]
           platform: cfg.initData ? "tdesktop" : "unknown",
           ready: noop,
           expand: noop,
+          isVersionAtLeast: () => modern,
+          LocationManager: locationManager,
+          shareMessage: modern
+            ? (id: string, cb?: (ok: boolean) => void) => {
+                (window as any).__tg.shared = id;
+                if (cb) cb(true);
+              }
+            : undefined,
           onEvent: noop,
           setHeaderColor: (c: string) => ((window as any).__tg.header = c),
           setBackgroundColor: noop,
@@ -63,7 +79,7 @@ export async function openApp(page: Page, o: OpenOptions = {}): Promise<string[]
         },
       };
     },
-    { initData, userId: o.userId ?? 0, scheme: o.scheme ?? "light" },
+    { initData, userId: o.userId ?? 0, scheme: o.scheme ?? "light", gps: o.gps ?? null, modern: o.modern ?? true },
   );
   await page.goto(o.path ?? "/app/");
   return errors;
@@ -79,6 +95,11 @@ export const setMock = (o: Record<string, string | number | boolean>) =>
   fetch(`${MOCK}/__set?${new URLSearchParams(Object.entries(o).map(([k, v]) => [k, typeof v === "boolean" ? (v ? "1" : "0") : String(v)]))}`);
 
 export const healthyMock = () => setMock({ forecastDown: false, metnoDown: false, rainingNow: false, rainSoon: false, warnDown: false, aqi: 62 });
+
+export const TG = "http://127.0.0.1:19012";
+/** What the mock Telegram was asked to do: [{ method, type, bytes, text }]. */
+export const telegramCalls = async (): Promise<{ method: string; type: string; bytes: number; text: string }[]> => (await fetch(`${TG}/__calls`)).json();
+export const setTelegram = (o: Record<string, boolean>) => fetch(`${TG}/__set?${new URLSearchParams(Object.entries(o).map(([k, v]) => [k, v ? "1" : "0"]))}`);
 
 export async function axe(page: Page) {
   const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();

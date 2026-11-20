@@ -72,6 +72,9 @@
   <symbol id="i-arrow" viewBox="0 0 24 24"><path class="i-ui" d="M12 19.500v-15M6.500 10l5.500-5.500 5.500 5.500"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path class="i-ui" d="M12 4.200L2.900 19.500h18.200zM12 10v4.300M12 16.900v.100"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><path class="i-ui" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5.500M12 7.600v.100"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path class="i-ui" d="M12 15V4M8 7.6l4-4 4 4M5 12v6.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V12"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path class="i-ui" d="M4 7h9M19 7h1M4 17h1M11 17h9M16 9.4a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8zM8 19.4a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8z"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><path class="i-ui" d="M12 18.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M12 13.2a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path class="i-ui" d="M5 12.500l4.500 4.500L19 7.500"/></symbol>
   <symbol id="i-walk" viewBox="0 0 24 24"><path class="i-ui" d="M13.500 5.200a1.400 1.400 0 1 0 0-2.800 1.400 1.400 0 0 0 0 2.800zM9 21.500l2.300-6.200-2-2.300.9-4.800 3.300-.9 2 3.400 3 1.300M10.200 8.200L7 9.800l-.8 3.200M13.600 15.300l2 2.400.9 3.800"/></symbol>
 </svg>
@@ -83,15 +86,26 @@
     <canvas id="sky" class="sky" aria-hidden="true"></canvas>
     <div class="hero-inner">
       <div class="hero-bar">
-        <button type="button" class="pill" id="place-btn" aria-haspopup="dialog" disabled>
-          <svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>
-          <span class="pill-text" id="place-name">SkyBrief</span>
-          <svg class="ico ico-chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
-        </button>
-        <button type="button" class="pill pill-round" id="refresh-btn" aria-label="Refresh" disabled>
-          <svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>
-        </button>
+        <div class="hero-place">
+          <button type="button" class="pill" id="place-btn" aria-haspopup="dialog" disabled>
+            <svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>
+            <span class="pill-text" id="place-name">SkyBrief</span>
+            <svg class="ico ico-chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+          </button>
+        </div>
+        <div class="hero-actions">
+          <button type="button" class="pill pill-round" id="share-btn" aria-label="Share" aria-haspopup="dialog" disabled>
+            <svg class="ico" aria-hidden="true"><use href="#i-share"/></svg>
+          </button>
+          <button type="button" class="pill pill-round" id="settings-btn" aria-label="Settings" aria-haspopup="dialog" disabled>
+            <svg class="ico" aria-hidden="true"><use href="#i-sliders"/></svg>
+          </button>
+          <button type="button" class="pill pill-round" id="refresh-btn" aria-label="Refresh" disabled>
+            <svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>
+          </button>
+        </div>
       </div>
+      <ul class="place-chips" id="place-chips" role="list" hidden></ul>
       <div class="hero-main">
         <h1 class="sr-only" id="page-title">SkyBrief Weather</h1>
         <p class="hero-date" id="now-date">&nbsp;</p>
@@ -128,9 +142,10 @@
 <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
   <div class="sheet-head">
     <h2 id="sheet-title" class="sheet-title"></h2>
-    <button type="button" class="icon-btn" id="sheet-close"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+    <button type="button" class="icon-btn" id="sheet-close" data-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
   </div>
   <p class="sheet-hint" id="sheet-hint"></p>
+  <button type="button" class="btn btn-wide" id="gps-btn"><svg class="ico" aria-hidden="true"><use href="#i-target"/></svg><span id="gps-btn-text"></span></button>
   <form id="search-form" class="search" novalidate>
     <label class="search-label" for="search-input" id="search-label"></label>
     <div class="search-row">
@@ -143,8 +158,32 @@
     <h3 class="sheet-sub" id="results-title"></h3>
     <ul class="choices" id="results"></ul>
   </div>
+  <div id="saved-block" hidden>
+    <h3 class="sheet-sub" id="saved-title"></h3>
+    <ul class="choices" id="saved"></ul>
+  </div>
   <h3 class="sheet-sub" id="shortcuts-title"></h3>
   <ul class="choices choices-2" id="shortcuts"></ul>
+</dialog>
+
+<dialog id="settings" class="sheet" aria-labelledby="settings-title">
+  <div class="sheet-head">
+    <h2 id="settings-title" class="sheet-title"></h2>
+    <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <p class="sheet-status" id="settings-status" role="status" aria-live="polite"></p>
+  <div id="settings-body"></div>
+</dialog>
+
+<dialog id="share" class="sheet" aria-labelledby="share-title">
+  <div class="sheet-head">
+    <h2 id="share-title" class="sheet-title"></h2>
+    <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <canvas id="card" class="share-card" width="1080" height="1350" role="img" aria-label="Picture card"></canvas>
+  <p class="sheet-hint" id="share-hint"></p>
+  <p class="sheet-status" id="share-status" role="status" aria-live="polite"></p>
+  <button type="button" class="btn btn-primary btn-wide" id="share-send"><svg class="ico" aria-hidden="true"><use href="#i-share"/></svg><span id="share-send-text"></span></button>
 </dialog>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

@@ -160,3 +160,27 @@ describe.skipIf(!LIVE)("live MetMalaysia warnings", () => {
     60_000,
   );
 });
+
+describe.skipIf(!LIVE)("live Department of Environment API (IPU) feed", () => {
+  it("the real feed still has the shape parseIpu expects, with fresh readings near Kuala Lumpur", async () => {
+    const { clearIpuCache, officialIpu, parseIpu } = await import("../src/ipu");
+    const res = await fetch("https://eqms.doe.gov.my/api3/publicmapproxy/PUBLIC_DISPLAY/CAQM_MCAQM_Current_Reading/MapServer/0/query?where=1%3D1&outFields=STATION_ID,DATETIME,API,STATION_LOCATION,LONGITUDE,LATITUDE&returnGeometry=false&f=json");
+    expect(res.ok).toBe(true);
+    const stations = parseIpu(await res.json());
+    expect(stations.length, "stations parsed").toBeGreaterThan(40);
+    for (const s of stations) {
+      expect(s.value).toBeGreaterThanOrEqual(0);
+      expect(s.value).toBeLessThanOrEqual(500);
+      expect(s.lat).toBeGreaterThan(0.5); // Malaysia
+      expect(s.lat).toBeLessThan(7.5);
+      expect(s.time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    }
+    clearIpuCache();
+    const env = {} as import("../src/types").Env;
+    const kl = await officialIpu(env, { name: "Kuala Lumpur", lat: 3.139, lon: 101.6869, country: "Malaysia", tz: "Asia/Kuala_Lumpur" });
+    expect(kl, "a fresh reading within 40 km of Kuala Lumpur").not.toBeNull();
+    expect(kl!.km).toBeLessThan(40);
+    console.log(`IPU near Kuala Lumpur: ${kl!.value} at ${kl!.name}, ${kl!.time}, ${kl!.km.toFixed(1)} km`);
+    expect(await officialIpu(env, { name: "Singapore", lat: 1.3521, lon: 103.8198, country: "Singapore", tz: "Asia/Singapore" })).toBeNull();
+  }, 30_000);
+});

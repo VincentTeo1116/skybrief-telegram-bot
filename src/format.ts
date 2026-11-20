@@ -164,8 +164,8 @@ export function tips(r: Report, lang: Lang): string[] {
   return out.length ? out : ["😎 " + t(lang, "tip_comfy")];
 }
 
-/** Tips for a whole future day, from its daily values. */
-function tomorrowTips(r: Report, di: number, lang: Lang): string[] {
+/** Tips for a whole future day (index into wx.daily), from its daily values. */
+export function dayTips(r: Report, di: number, lang: Lang): string[] {
   const d = r.wx.daily;
   const out: string[] = [];
   if (pct(d.precipitation_probability_max[di]) >= 50) out.push("☂️ " + t(lang, "tip_umbrella"));
@@ -404,7 +404,7 @@ export function tomorrowMessage(r: Report, p: Prefs, ribbon?: string): string {
     );
   }
   if (!hidden.has("tips")) {
-    blocks.push([`💡 <b>${t(lang, "tips_title")}</b>`, ...tomorrowTips(r, di, lang).map((x) => `• ${x}`)].join("\n"));
+    blocks.push([`💡 <b>${t(lang, "tips_title")}</b>`, ...dayTips(r, di, lang).map((x) => `• ${x}`)].join("\n"));
   }
   return blocks.join(`\n${DIVIDER}\n`) + "\n\n" + footer(r, p);
 }

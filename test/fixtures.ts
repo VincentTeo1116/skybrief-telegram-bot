@@ -136,6 +136,7 @@ export function makeUser(o: Partial<User> = {}): User {
     district: "",
     warningsOn: true,
     warnSeen: [],
+    placesJson: "",
     ...o,
   };
 }

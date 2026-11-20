@@ -15,6 +15,13 @@ Unit = `test/miniapp.test.ts` (Vitest). E2E = `tests/e2e/*.e2e.ts` (Playwright, 
 | FR-9 change location | `miniapp.ts` `onPlaces`, `onSavePlace`; `location.ts` `savePlace`; `app.js` sheet | E2E "FR-9 search for a city…", "FR-9 the page can only choose from the list", "F9", "F10" |
 | FR-10 preferences | `buildDashboard` uses `Prefs` | Unit "units, clock and language…"; E2E "FR-10/11 the demo follows the language" |
 | FR-11 demo | `src/demo.ts`, `miniapp.ts` `onDemo`, `app.js` demo banner | Unit "demo scenes" ×7, "the demo needs no session and is labelled"; E2E scene tests, "an unknown demo scene is refused" |
+| FR-12 saved places | `location.ts` (`savedPlaces`, `savePlace`, `activatePlace`, `forgetPlace`), `miniapp.ts` `onSavePlace` / `onRemovePlace`, `app.js` chips + `renderSavedPlaces`, migration 0004 | Unit "saved places" ×5; E2E "FR-12/14 saved places", "at most five", "when the weather can't be loaded" |
+| FR-13 settings | `settings.ts` (`parseSettingsChange`, `settingsPatch`, `setLanguage`), `miniapp.ts` `onSettings`, `handlers.ts` (now uses the same rules), `app.js` `renderSettings` / `saveSettings` | Unit "settings" ×8; E2E "FR-13" ×4; Integ (chat settings unchanged) |
+| FR-14 official IPU | `ipu.ts`, `miniapp.ts` (`ipu` in the dashboard), `app.js` `ipuBlock` | Unit "official IPU" ×6; E2E "FR-12/14", "F17"; Live "Department of Environment feed" |
+| FR-15 day details | `miniapp.ts` `dayDetail`, `app.js` `dayDetail` / `renderDays` | Unit "every day carries its details" ×4; E2E "FR-15" |
+| FR-16 hourly chart | `miniapp.ts` (`hourly[].t`), `app.js` `hourChart` | Unit "the chart gets a plain number"; E2E "FR-16" ×2 |
+| FR-17 GPS | `miniapp.ts` `onSavePlace` (lat/lon), `app.js` `useMyLocation` | E2E "FR-17" ×3, "F16" |
+| FR-18 share card | `public/app/card.js`, `scene.js` `makePainter`, `miniapp.ts` `onShare`, `telegram.ts` `sendPhoto` / `savePreparedPhoto` | E2E "FR-18" ×3, "F18" ×2, "F19" |
 | NFR-1 access | `miniapp.ts` `verifyInitData`, `authorise` | Unit "verifyInitData" ×7, "no session, no data"; E2E "F1", "F2", "F3", "NFR-1 someone who loses access…" |
 | NFR-2 fallbacks | see `docs/FALLBACKS.md` | E2E "F1" … "F12" |
 | NFR-3 responsive | `app.css` | E2E "NFR-3 <width>px <page>" ×28, "text at 200%" |

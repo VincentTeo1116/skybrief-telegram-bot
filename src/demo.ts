@@ -8,6 +8,7 @@ import { addDays, addHours } from "./insights";
 import { presetPlace } from "./presets";
 import type { Air, AirHourly, Forecast, Lang, Report } from "./types";
 import { localParts } from "./util";
+import type { IpuReading } from "./ipu";
 import { warningId, type State, type Warning } from "./warnings";
 
 export const DEMO_SCENES = ["sunny", "cloudy", "rainy", "windy", "storm", "night"] as const;
@@ -46,7 +47,7 @@ const WET = new Set([61, 63, 65, 80, 81, 82, 95, 96, 99]);
 const sinDay = (h: number) => Math.max(0, Math.sin((Math.PI * (h - 6)) / 12));
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export function demoReport(scene: DemoScene, lang: Lang = "en", now = new Date()): { report: Report; warnings: Warning[]; state: State } {
+export function demoReport(scene: DemoScene, lang: Lang = "en", now = new Date()): { report: Report; warnings: Warning[]; state: State; ipu: IpuReading } {
   const s = SPECS[scene];
   const place = presetPlace(0, lang); // Kuala Lumpur
   const today = localParts(place.tz, now).date;
@@ -146,5 +147,7 @@ export function demoReport(scene: DemoScene, lang: Lang = "en", now = new Date()
     });
   }
 
-  return { report: { place, wx, aq, aqHourly, fetchedAt: now.getTime(), source: "open-meteo" }, warnings, state: "Kuala Lumpur" };
+  // a made-up official reading from a nearby station, so the IPU block can be reviewed too
+  const ipu: IpuReading = { name: "Cheras", lat: 3.1063, lon: 101.7179, value: Math.max(12, Math.round(s.aqi * 0.85)), time: `${today}T${pad(s.hour)}:00`, km: 4.2 };
+  return { report: { place, wx, aq, aqHourly, fetchedAt: now.getTime(), source: "open-meteo" }, warnings, state: "Kuala Lumpur", ipu };
 }

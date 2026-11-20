@@ -26,8 +26,26 @@ export const state = {
   warnDown: false,
   warnVersion: 0, // bump to "re-issue" the warning (new issue time = new id)
   warnAreas: "Perak (Kampar, Kinta) • Selangor (Sabak Bernam) • Kuala Lumpur",
+  // Department of Environment API (IPU) feed
+  ipu: 63, // the Cheras (Kuala Lumpur) station's reading
+  ipuDown: false,
+  ipuStaleHours: 0, // how old the readings claim to be
 };
-export const counts = { forecast: 0, air: 0, geo: 0, reverse: 0, waqi: 0, metno: 0, warnings: 0 };
+export const counts = { forecast: 0, air: 0, geo: 0, reverse: 0, waqi: 0, metno: 0, warnings: 0, ipu: 0 };
+
+/** Same shape as the Department of Environment's map service: local wall-clock time stored as if it were UTC. */
+function ipuFeed() {
+  const stamp = Math.floor((Date.now() + 8 * 3_600_000) / 3_600_000) * 3_600_000 - state.ipuStaleHours * 3_600_000;
+  const station = (id, name, lat, lon, api) => ({ attributes: { STATION_ID: id, DATETIME: stamp, API: api, STATION_LOCATION: name, LATITUDE: lat, LONGITUDE: lon } });
+  return {
+    features: [
+      station("CA16W", "Cheras, W.P. KUALA LUMPUR", 3.10626, 101.717931, state.ipu),
+      station("CA15W", "Batu Muda, W.P. KUALA LUMPUR", 3.212429, 101.682218, 51),
+      station("CA08A", "Tasek Ipoh, PERAK", 4.629444, 101.116667, 44),
+      { attributes: { STATION_ID: "BAD", DATETIME: stamp, API: null, STATION_LOCATION: "Broken, NOWHERE", LATITUDE: 3.1, LONGITUDE: 101.7 } },
+    ],
+  };
+}
 
 const klStamp = (offsetMin) => new Date(Date.now() + 8 * 3_600_000 + offsetMin * 60_000).toISOString().slice(0, 19);
 
@@ -213,6 +231,10 @@ export function startMockWeather(port) {
     if (url.pathname === "/warnings") {
       counts.warnings++;
       return state.warnDown ? send({ error: true }, 503) : send(warningsFeed());
+    }
+    if (url.pathname === "/ipu") {
+      counts.ipu++;
+      return state.ipuDown ? send({ error: true }, 503) : send(ipuFeed());
     }
     if (url.pathname === "/metno") {
       counts.metno++;

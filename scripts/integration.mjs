@@ -147,6 +147,7 @@ const vars = {
   WAQI_URL: `${WX}/waqi`,
   METNO_URL: `${WX}/metno`,
   WARNINGS_URL: `${WX}/warnings`,
+  IPU_URL: `${WX}/ipu`,
   HEALTH_EVERY_MINUTE: "1",
   APP_URL: "https://skybrief.test", // the mini app's public address (Telegram only accepts HTTPS for web-app buttons)
 };

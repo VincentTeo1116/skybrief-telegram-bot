@@ -81,22 +81,20 @@ function moonSprite(size) {
 const wrap = (v, span) => ((v % span) + span) % span;
 
 /**
- * @param {HTMLCanvasElement} canvas
- * @returns {{ set(scene: {kind: string, night: boolean, wind: number, rain: number}): void } | null}
- *          null when the browser has no 2D canvas (the CSS sky is still shown).
+ * Everything needed to draw one scene at one size. Pure: it only draws on the context it is given, so the same
+ * painter serves the live sky and the still picture on the share card.
+ *
+ * @param {number} w  width in CSS pixels
+ * @param {number} h  height in CSS pixels
+ * @param {{kind: string, night: boolean, wind: number, rain: number}} scene
+ * @param {{unit?: number, right?: number}} [opts]  unit = size factor (default follows the width);
+ *                                                  right = x of the right edge the sun / moon hangs from
+ * @returns {{ draw(ctx: CanvasRenderingContext2D, t: number): void }}
  */
-export function createSky(canvas) {
-  const ctx = canvas.getContext ? canvas.getContext("2d") : null;
-  if (!ctx) return null;
-
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let w = 0;
-  let h = 0;
-  let scene = null;
+export function makePainter(w, h, scene, opts = {}) {
   let parts = null;
-  let raf = 0;
-  let origin = 0;
-  let onScreen = true;
+  build();
+  return { draw };
 
   // ---------------------------------------------------------------- build (once per scene / size)
   function build() {
@@ -105,8 +103,8 @@ export function createSky(canvas) {
     const kind = scene.kind;
     const night = scene.night;
     const wet = kind === "rain" || kind === "storm";
-    const u = Math.max(0.85, Math.min(1.5, w / 390)); // scale everything a little with the screen
-    const right = Math.min(w, w / 2 + 480) - 16; // right edge of the page column on wide screens
+    const u = opts.unit ?? Math.max(0.85, Math.min(1.5, w / 390)); // scale everything a little with the screen
+    const right = opts.right ?? Math.min(w, w / 2 + 480) - 16; // right edge of the page column on wide screens
     const body = { x: right - 54 * u, y: 112 * u, r: 30 * u };
 
     parts = { u, body, sun: false, moon: null, stars: [], clouds: [], drops: [], streaks: [], leaves: [], fog: [], bolts: null };
@@ -213,8 +211,7 @@ export function createSky(canvas) {
   }
 
   // ---------------------------------------------------------------- draw one frame at time t (seconds)
-  function draw(t) {
-    ctx.clearRect(0, 0, w, h);
+  function draw(ctx, t) {
     if (!parts) return;
     const { body, u } = parts;
 
@@ -365,6 +362,35 @@ export function createSky(canvas) {
     }
   }
 
+}
+
+/** The moment shown when nothing may move (reduced motion, the share card). */
+export const STILL = STILL_TIME;
+
+/**
+ * The live, animated sky.
+ * @param {HTMLCanvasElement} canvas
+ * @returns {{ set(scene: {kind: string, night: boolean, wind: number, rain: number}): void } | null}
+ *          null when the browser has no 2D canvas (the CSS sky is still shown).
+ */
+export function createSky(canvas) {
+  const ctx = canvas.getContext ? canvas.getContext("2d") : null;
+  if (!ctx) return null;
+
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let w = 0;
+  let h = 0;
+  let scene = null;
+  let painter = null;
+  let raf = 0;
+  let origin = 0;
+  let onScreen = true;
+
+  function draw(t) {
+    ctx.clearRect(0, 0, w, h);
+    if (painter) painter.draw(ctx, t);
+  }
+
   // ---------------------------------------------------------------- loop control
   function frame(now) {
     raf = 0;
@@ -394,7 +420,7 @@ export function createSky(canvas) {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    build();
+    painter = scene ? makePainter(w, h, scene) : null;
     if (scene) draw(reduce.matches || !origin ? STILL_TIME : (performance.now() - origin) / 1000);
   }
 

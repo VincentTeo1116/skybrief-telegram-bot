@@ -186,7 +186,7 @@ test("FR-9 search for a city, save it, and switch back with a shortcut", async (
 
 test("FR-9 the page can only choose from the list: bad requests are refused", async ({ request }) => {
   const headers = { authorization: `tma ${signInitData(ACTIVE)}` };
-  const bodies: unknown[] = [{ preset: 99 }, { preset: -1 }, { pick: 7 }, { pick: "0" }, { lat: 1, lon: 2, name: "Evil" }, {}, [], "x".repeat(500)];
+  const bodies: unknown[] = [{ preset: 99 }, { preset: -1 }, { pick: 7 }, { pick: "0" }, { saved: 9 }, { saved: -1 }, { lat: 91, lon: 2 }, { lat: 3, lon: 181 }, { lat: "3.1", lon: "101.7" }, { lat: 3.1 }, { name: "Evil" }, {}, [], "x".repeat(500)];
   for (const data of bodies) {
     const res = await request.post("/api/app/place", { headers, data });
     expect(res.status(), JSON.stringify(data).slice(0, 40)).toBe(400);

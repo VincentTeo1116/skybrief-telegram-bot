@@ -34,6 +34,17 @@ export class Telegram {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
+    return this.finish<T>(method, res);
+  }
+
+  /** Like call(), for a request that carries a file. */
+  async callForm<T = unknown>(method: string, form: FormData): Promise<T> {
+    const base = this.env.TELEGRAM_API_BASE || "https://api.telegram.org";
+    const res = await fetch(`${base}/bot${this.env.TELEGRAM_BOT_TOKEN}/${method}`, { method: "POST", body: form });
+    return this.finish<T>(method, res);
+  }
+
+  private async finish<T>(method: string, res: Response): Promise<T> {
     let body: { ok?: boolean; result?: T; error_code?: number; description?: string } = {};
     try {
       body = await res.json();
@@ -44,6 +55,35 @@ export class Telegram {
       throw new TelegramError(method, body.error_code ?? res.status, body.description ?? res.statusText);
     }
     return body.result as T;
+  }
+
+  /** Send a picture to a chat. Returns Telegram's id for the stored picture (its largest size). */
+  async sendPhoto(chatId: number, photo: Blob, caption: string): Promise<string> {
+    const form = new FormData();
+    form.set("chat_id", String(chatId));
+    form.set("caption", caption);
+    form.set("photo", photo, "skybrief.jpg");
+    const message = await this.callForm<{ photo?: { file_id?: string }[] }>("sendPhoto", form);
+    const sizes = message?.photo ?? [];
+    const fileId = sizes[sizes.length - 1]?.file_id;
+    if (!fileId) throw new TelegramError("sendPhoto", 502, "no file id returned");
+    return fileId;
+  }
+
+  /**
+   * Prepare a picture the person may share to any chat from a mini app (Bot API 8.0). Returns the id for
+   * `Telegram.WebApp.shareMessage`. Older servers answer with an error, which callers treat as "not available".
+   */
+  async savePreparedPhoto(userId: number, fileId: string, caption: string): Promise<string> {
+    const r = await this.call<{ id?: string }>("savePreparedInlineMessage", {
+      user_id: userId,
+      result: { type: "photo", id: "card", photo_file_id: fileId, caption },
+      allow_user_chats: true,
+      allow_group_chats: true,
+      allow_channel_chats: true,
+    });
+    if (!r?.id) throw new TelegramError("savePreparedInlineMessage", 502, "no id returned");
+    return r.id;
   }
 
   /** `silent` delivers without a notification sound (used for warnings during quiet hours). */

@@ -1,10 +1,13 @@
 /**
  * Telegram Mini App back end (docs/DESIGN.md).
  *
- *   GET  /api/app/dashboard[?fresh=1]   the signed-in person's dashboard            FR-2..FR-8, FR-10
- *   GET  /api/app/places?q=ipoh         city search (labels only)                    FR-9
- *   POST /api/app/place                 {"pick": n} or {"preset": n}: save a location FR-9
- *   GET  /api/app/demo?scene=rainy      labelled demo data, no sign-in               FR-11
+ *   GET  /api/app/dashboard[?fresh=1]   the signed-in person's dashboard              FR-2..FR-8, FR-10, FR-14..16
+ *   GET  /api/app/places?q=ipoh         city search (labels only)                      FR-9
+ *   POST /api/app/place                 {"pick": n} | {"preset": n} | {"saved": n} | {"lat": .., "lon": ..}   FR-9, FR-12, FR-17
+ *   POST /api/app/place/remove          {"saved": n}: forget a saved place             FR-12
+ *   POST /api/app/settings              {"tempUnit": "f", ...}: change settings        FR-13
+ *   POST /api/app/share                 a JPEG picture card: send it to the person's chat and prepare it for sharing   FR-18
+ *   GET  /api/app/demo?scene=rainy      labelled demo data, no sign-in                 FR-11
  *
  * The page proves who it is with Telegram's signed `initData` in the header  Authorization: tma <initData>  (NFR-1).
  * The dashboard is a ready-to-draw view-model: every text is already translated and every number already in the
@@ -12,12 +15,16 @@
  */
 import { getUser, patchUser, placeOf } from "./db";
 import { DEMO_SCENES, demoReport, isDemoScene } from "./demo";
-import { aqiBand, aqiLevel, airOutlookInfo, bestLines, rainSummary, sourceText, tips, trendInfo, uvLabel, wInstruction, wLabel, wText, wTitle, type RainLevel } from "./format";
+import { aqiBand, aqiLevel, airOutlookInfo, bestLines, dayTips, rainSummary, sourceText, tips, trendInfo, uvLabel, wInstruction, wLabel, wText, wTitle, type RainLevel } from "./format";
+import { announceLanguage } from "./handlers";
 import * as i18n from "./i18n";
 import { T, t } from "./i18n";
-import { STORM_CODES, dailyIndex, hourIndex, hoursBetween, nextHours, pct } from "./insights";
-import { savePlace } from "./location";
+import { STORM_CODES, aqiPeakOn, bestWindow, dailyIndex, dayPeriods, hourIndex, hourPoints, hoursBetween, nextHours, pct } from "./insights";
+import { ipuBand, officialIpu, type IpuReading } from "./ipu";
+import { activatePlace, forgetPlace, isActivePlace, savePlace, savedPlaces } from "./location";
 import { PRESET_COUNT, presetName, presetPlace } from "./presets";
+import { parseSettingsChange, setLanguage, settingsPatch } from "./settings";
+import { Telegram, TelegramError } from "./telegram";
 import type { Env, Forecast, Lang, Place, Prefs, Report, User } from "./types";
 import { cToDisplay, defaultPrefs, deg, prefsOf, speed, unitLetter } from "./units";
 import { parseIdList, safeEqual } from "./util";
@@ -149,6 +156,35 @@ export function iconOf(code: number | null | undefined, isDay: boolean): string 
 }
 
 // ---------------------------------------------------------------- the dashboard view-model
+/** What a day's row opens up to show (FR-15). Every line is optional: a line with no data is simply absent. */
+export interface DayDetail {
+  periods: { label: string; icon: string; cond: string; temp: string; prob: number }[];
+  rain: string;
+  wind: string | null;
+  uv: string | null;
+  sun: string | null;
+  air: string | null;
+  best: string | null;
+  tips: string[];
+}
+
+export interface SettingsView {
+  lang: Lang;
+  tempUnit: string;
+  windUnit: string;
+  clock: string;
+  dailyOn: boolean;
+  dailyTime: string;
+  eveningOn: boolean;
+  eveningTime: string;
+  rainAlerts: boolean;
+  aqiAlert: number;
+  warningsOn: boolean;
+  /** Official warnings exist for Malaysia only. */
+  warningsAvailable: boolean;
+  tz: string;
+}
+
 export interface Dashboard {
   v: 1;
   lang: Lang;
@@ -171,7 +207,8 @@ export interface Dashboard {
   };
   warnings: { title: string; until: string; valid: string; area: string | null; text: string; instruction: string }[];
   rain: { level: RainLevel; text: string };
-  hourly: { label: string; icon: string; cond: string; temp: string; prob: number }[];
+  /** `t` = the temperature as a number in the person's unit, for the chart (null when unknown). */
+  hourly: { label: string; icon: string; cond: string; temp: string; t: number | null; prob: number }[];
   air: {
     aqi: number;
     level: number;
@@ -182,7 +219,9 @@ export interface Dashboard {
     outlook: { kind: "rising" | "falling" | "steady"; text: string } | null;
     measured: boolean;
   } | null;
-  daily: { label: string; date: string; weekend: boolean; icon: string; cond: string; lo: string; hi: string; loN: number | null; hiN: number | null; prob: number; mm: string | null }[];
+  /** Malaysia's official index from the nearest Department of Environment station, when there is a fresh one (FR-14). */
+  ipu: { value: number; level: number; label: string; station: string; source: string } | null;
+  daily: { label: string; date: string; weekend: boolean; icon: string; cond: string; lo: string; hi: string; loN: number | null; hiN: number | null; prob: number; mm: string | null; detail: DayDetail }[];
   details: {
     humidity: string;
     wind: { speed: string; dir: string; deg: number | null; gust: string | null };
@@ -198,8 +237,12 @@ export interface Dashboard {
   tips: string[];
   footer: { observed: string; source: string; backup: boolean };
   presets: string[];
+  /** The person's saved places (FR-12). Indexes are what POST /api/app/place {"saved": n} expects. */
+  places: { name: string; label: string; active: boolean }[];
+  /** Null in the demo: there is no account to change. */
+  settings: SettingsView | null;
   strings: Record<string, string>;
-  /** Set on the answer to a successful location change. */
+  /** Set on the answer to a successful change (location or settings). */
   saved?: true;
 }
 
@@ -216,7 +259,63 @@ export function appStrings(lang: Lang): Record<string, string> {
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], opts: { state?: State | null; demo?: boolean } = {}): Dashboard {
+export function settingsView(u: User): SettingsView {
+  return {
+    lang: u.lang,
+    tempUnit: u.tempUnit,
+    windUnit: u.windUnit,
+    clock: u.clock,
+    dailyOn: u.dailyOn,
+    dailyTime: u.dailyTime,
+    eveningOn: u.eveningOn,
+    eveningTime: u.eveningTime,
+    rainAlerts: u.rainAlerts,
+    aqiAlert: u.aqiAlert,
+    warningsOn: u.warningsOn,
+    warningsAvailable: u.region !== "-",
+    tz: u.tz,
+  };
+}
+
+function dayDetail(r: Report, p: Prefs, i: number, isToday: boolean): DayDetail {
+  const lang = p.lang;
+  const d = r.wx.daily;
+  const date = d.time[i];
+  const clock = (iso: string) => i18n.clock(iso, lang, p.clock);
+  const mm = d.precipitation_sum?.[i];
+  const w = d.wind_speed_10m_max?.[i];
+  const uv = d.uv_index_max[i];
+  const peak = aqiPeakOn(r, date);
+  const points = hourPoints(r, date);
+  const window = points.length ? bestWindow(points) : null;
+  return {
+    periods: dayPeriods(r, date).map((x) => ({
+      label: t(lang, `p_${x.key}`),
+      icon: iconOf(x.code, x.key !== "evening"), // the evening gets the night icon, as in the chat's "Tomorrow" view
+      cond: i18n.wmoText(x.code, lang),
+      temp: Number.isNaN(x.temp) ? "–" : deg(x.temp, p),
+      prob: x.prob,
+    })),
+    rain: t(lang, "rain_chance_day", { p: pct(d.precipitation_probability_max[i]) }) + (mm != null && mm >= 1 ? t(lang, "rain_total", { mm: mm.toFixed(0) }) : ""),
+    wind: w != null ? t(lang, "wind_up_to", { w: speed(w, p) }) : null,
+    uv: uv != null ? t(lang, "app_day_uv", { n: uv.toFixed(0), l: uvLabel(uv, lang) }) : null,
+    sun: d.sunrise[i] && d.sunset[i] ? t(lang, "app_day_sun", { a: clock(d.sunrise[i]), b: clock(d.sunset[i]) }) : null,
+    air: peak ? `${t(lang, "aqi_tomorrow", { aqi: peak.aqi, h: i18n.hourLabel(peak.time, lang, p.clock) })} · ${aqiBand(peak.aqi, lang)[1]}` : null,
+    // Today's best time and tips have their own card; a day without hourly data makes no claim either way.
+    best: isToday || !points.length ? null : window ? t(lang, "app_day_best", { r: i18n.rangeLabel(window.start, window.end, lang, p.clock) }) : t(lang, "app_day_best_none"),
+    tips: isToday ? [] : dayTips(r, i, lang),
+  };
+}
+
+export interface DashboardOptions {
+  state?: State | null;
+  demo?: boolean;
+  ipu?: IpuReading | null;
+  /** The signed-in person: adds their saved places and settings. */
+  user?: User | null;
+}
+
+export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], opts: DashboardOptions = {}): Dashboard {
   const lang = p.lang;
   const c = r.wx.current;
   const h = r.wx.hourly;
@@ -237,6 +336,7 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
       icon: iconOf(row.code, day),
       cond: i18n.wmoText(row.code, lang),
       temp: deg(row.temp, p),
+      t: row.temp == null ? null : round1(cToDisplay(row.temp, p.tempUnit)),
       prob: row.prob,
     };
   });
@@ -260,6 +360,7 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
       hiN: hi == null ? null : round1(cToDisplay(hi, p.tempUnit)),
       prob: pct(d.precipitation_probability_max[i]),
       mm: mm != null && mm >= 1 ? `${mm.toFixed(0)} mm` : null,
+      detail: dayDetail(r, p, i, i === di),
     });
   }
 
@@ -277,6 +378,16 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
         measured: !!aq.station,
       }
     : null;
+  const reading = opts.ipu ?? null;
+  const ipu: Dashboard["ipu"] = reading
+    ? {
+        value: reading.value,
+        level: ipuBand(reading.value),
+        label: i18n.aqiLabel(ipuBand(reading.value), lang),
+        station: t(lang, "app_ipu_station", { s: reading.name, t: clock(reading.time) }),
+        source: t(lang, "app_ipu_source"),
+      }
+    : null;
 
   // ---- sun
   const sunrise = d.sunrise[di];
@@ -290,6 +401,7 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
   const uv = d.uv_index_max[di];
   const rain = rainSummary(r, p);
   const state = opts.state ?? null;
+  const user = opts.user ?? null;
 
   return {
     v: 1,
@@ -325,6 +437,7 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
     rain: { level: rain.level, text: rain.text + rain.more },
     hourly,
     air,
+    ipu,
     daily,
     details: {
       humidity: `${Math.round(c.relative_humidity_2m)}%`,
@@ -345,6 +458,8 @@ export function buildDashboard(r: Report, p: Prefs, warnings: Warning[] = [], op
     tips: tips(r, lang),
     footer: { observed: t(lang, "observed", { t: clock(c.time) }), source: sourceText(r, p, (s) => s), backup: r.source === "met-no" },
     presets: Array.from({ length: PRESET_COUNT }, (_, i) => presetName(i, lang)),
+    places: user ? savedPlaces(user).map((sp) => ({ name: sp.name, label: placeLabel({ ...sp }), active: isActivePlace(user, sp) })) : [],
+    settings: user ? settingsView(user) : null,
     strings: appStrings(lang),
   };
 }
@@ -366,7 +481,12 @@ export const apiError = (status: number, code: string, message: string, extra: R
 
 /** A forced refresh is honoured at most this often per place: the page's refresh button can't hammer the weather services. */
 export const MIN_REFRESH_MS = 60_000;
-const MAX_BODY_CHARS = 200;
+const MAX_BODY_CHARS = 300;
+/** A picture card: comfortably above what the page produces (about 150 KB), far below anything abusive. */
+export const MAX_CARD_BYTES = 700_000;
+/** One picture per person per this long (per Worker instance): a share button can't be turned into a flood. */
+export const SHARE_INTERVAL_MS = 10_000;
+const lastShare = new Map<number, number>();
 
 type Auth = { user: User } | { refused: Response };
 
@@ -386,7 +506,8 @@ async function authorise(req: Request, env: Env): Promise<Auth> {
 
 async function userDashboard(env: Env, user: User, report: Report): Promise<Dashboard> {
   const wx = makeWeather(env);
-  return buildDashboard(report, prefsOf(user), await userWarnings(wx, user), { state: canonicalState(user.region) });
+  const [warnings, ipu] = await Promise.all([userWarnings(wx, user), officialIpu(env, placeOf(user))]); // both optional: neither ever throws
+  return buildDashboard(report, prefsOf(user), warnings, { state: canonicalState(user.region), ipu, user });
 }
 
 async function onDashboard(env: Env, user: User, fresh: boolean): Promise<Response> {
@@ -407,22 +528,37 @@ async function onPlaces(env: Env, user: User, query: string): Promise<Response> 
     if (!(e instanceof WeatherError)) throw e;
     return apiError(503, "search_unavailable", t(user.lang, "app_err_search"), { "retry-after": "30" });
   }
-  // The page gets labels only and answers with an INDEX, exactly like the chat's buttons: it can never make us store an arbitrary place.
+  // The page gets labels only and answers with an INDEX, exactly like the chat's buttons: it can never make us store an arbitrary name.
   await patchUser(env.DB, user.chatId, { searchJson: JSON.stringify(results) });
   return apiJson({ results: results.map(placeLabel) });
 }
 
+/** A small JSON object from the page, or null for anything else (too long, not JSON, not an object). */
+async function readBody(req: Request): Promise<Record<string, unknown> | null> {
+  const raw = await req.text();
+  if (raw.length > MAX_BODY_CHARS) return null;
+  try {
+    const body = JSON.parse(raw);
+    return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+const isCoordinate = (v: unknown, limit: number): v is number => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= limit;
+
 async function onSavePlace(env: Env, user: User, req: Request): Promise<Response> {
   const bad = () => apiError(400, "bad_request", t(user.lang, "app_err_generic"));
-  const raw = await req.text();
-  if (raw.length > MAX_BODY_CHARS) return bad();
-  let body: { pick?: unknown; preset?: unknown };
-  try {
-    body = JSON.parse(raw);
-  } catch {
-    return bad();
+  const body = await readBody(req);
+  if (!body) return bad();
+  const wx = makeWeather(env);
+
+  // one of the person's saved places: already validated when it was first saved
+  if (Number.isInteger(body.saved)) {
+    const switched = await activatePlace(env, wx, user, body.saved as number);
+    if (!switched) return bad();
+    return apiJson({ ...(await userDashboard(env, switched.user, switched.report)), saved: true });
   }
-  if (!body || typeof body !== "object") return bad();
 
   let place: Place | undefined;
   if (Number.isInteger(body.preset)) {
@@ -436,13 +572,90 @@ async function onSavePlace(env: Env, user: User, req: Request): Promise<Response
       /* treat as expired */
     }
     place = Array.isArray(results) ? results[body.pick as number] : undefined;
+  } else if (isCoordinate(body.lat, 90) && isCoordinate(body.lon, 180)) {
+    // GPS (FR-17): the page sends coordinates only; the NAME always comes from our own reverse lookup, as in the chat
+    place = await wx.reverseGeocode(Math.round(body.lat * 1e4) / 1e4, Math.round(body.lon * 1e4) / 1e4, user.lang);
   }
   if (!place) return bad();
 
-  const wx = makeWeather(env);
   const saved = await savePlace(env, wx, user, place);
   // Label the place exactly as every later load will (from the saved row), so the name doesn't change on the next visit.
   return apiJson({ ...(await userDashboard(env, saved.user, { ...saved.report, place: placeOf(saved.user) })), saved: true });
+}
+
+async function onRemovePlace(env: Env, user: User, req: Request): Promise<Response> {
+  const body = await readBody(req);
+  const u = body && Number.isInteger(body.saved) ? await forgetPlace(env, user, body.saved as number) : null;
+  if (!u) return apiError(400, "bad_request", t(user.lang, "app_err_generic"));
+  return apiJson({ ...(await userDashboard(env, u, await makeWeather(env).fetchReport(placeOf(u)))), saved: true });
+}
+
+async function onSettings(env: Env, user: User, req: Request): Promise<Response> {
+  const change = parseSettingsChange(await readBody(req));
+  if (!change) return apiError(400, "bad_request", t(user.lang, "app_err_save"));
+  const wx = makeWeather(env);
+  let u = user;
+  const newLang = change.lang && change.lang !== u.lang ? change.lang : null;
+  if (newLang) u = await setLanguage(env, wx, u, newLang);
+  const patch = settingsPatch(u, change);
+  if (Object.keys(patch).length) u = await patchUser(env.DB, u.chatId, patch);
+  if (newLang) {
+    // The chat's bottom keyboard and command menu can only follow by sending a message. Best effort: the setting is already saved.
+    try {
+      await announceLanguage({ env, tg: new Telegram(env) }, u.chatId, newLang);
+    } catch {
+      /* e.g. the person muted or blocked the bot: the app still works */
+    }
+  }
+  try {
+    return apiJson({ ...(await userDashboard(env, u, await wx.fetchReport(placeOf(u)))), saved: true });
+  } catch (e) {
+    if (!(e instanceof WeatherError)) throw e;
+    // The change IS saved; only the weather couldn't be redrawn. Say so truthfully instead of reporting a failure.
+    return apiJson({ saved: true, settings: settingsView(u), strings: appStrings(u.lang) });
+  }
+}
+
+/**
+ * FR-18. The page drew a picture card and sends the JPEG. We forward it to the person's OWN chat with the bot, and
+ * ask Telegram to prepare it so the page can open Telegram's "share to a chat" picker. The second step needs a
+ * recent Telegram; without it the picture is still in their chat, ready to forward.
+ */
+async function onShare(env: Env, user: User, req: Request): Promise<Response> {
+  const lang = user.lang;
+  const fail = (status: number, code: string, extra: Record<string, string> = {}) => apiError(status, code, t(lang, "app_err_share"), extra);
+  if (!(req.headers.get("content-type") ?? "").startsWith("image/jpeg")) return fail(400, "bad_request");
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (declared > MAX_CARD_BYTES) return fail(413, "too_large");
+  const bytes = new Uint8Array(await req.arrayBuffer());
+  if (bytes.length < 1000 || bytes.length > MAX_CARD_BYTES) return fail(bytes.length > MAX_CARD_BYTES ? 413 : 400, "bad_request");
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return fail(400, "bad_request"); // not a JPEG
+
+  const now = Date.now();
+  const since = now - (lastShare.get(user.chatId) ?? 0);
+  const gap = Number(env.APP_SHARE_MS ?? SHARE_INTERVAL_MS);
+  const interval = Number.isFinite(gap) && gap >= 0 ? gap : SHARE_INTERVAL_MS;
+  if (since < interval) return fail(429, "too_soon", { "retry-after": String(Math.max(1, Math.ceil((interval - since) / 1000))) });
+  lastShare.set(user.chatId, now);
+  if (lastShare.size > 500) lastShare.delete(lastShare.keys().next().value as number);
+
+  const tg = new Telegram(env);
+  const caption = t(lang, "share_caption", { p: placeLabel(placeOf(user)) });
+  let fileId: string;
+  try {
+    fileId = await tg.sendPhoto(user.chatId, new Blob([bytes], { type: "image/jpeg" }), caption);
+  } catch (e) {
+    if (!(e instanceof TelegramError)) throw e;
+    console.log(JSON.stringify({ event: "share_failed", code: e.code }));
+    return fail(502, "telegram_failed");
+  }
+  let prepared: string | null = null;
+  try {
+    prepared = await tg.savePreparedPhoto(user.chatId, fileId, caption);
+  } catch {
+    /* older Bot API / client: the picture is in their chat, which is the fallback */
+  }
+  return apiJson({ sent: true, prepared });
 }
 
 function onDemo(url: URL): Response {
@@ -450,13 +663,16 @@ function onDemo(url: URL): Response {
   if (!isDemoScene(scene)) return apiError(400, "bad_scene", `Use one of: ${DEMO_SCENES.join(", ")}`);
   const lang = langHint(url.searchParams.get("lang"));
   const demo = demoReport(scene, lang);
-  return apiJson(buildDashboard(demo.report, defaultPrefs(lang), demo.warnings, { state: demo.state, demo: true }));
+  return apiJson(buildDashboard(demo.report, defaultPrefs(lang), demo.warnings, { state: demo.state, demo: true, ipu: demo.ipu }));
 }
 
 const ROUTES: Record<string, "GET" | "POST"> = {
   "/api/app/dashboard": "GET",
   "/api/app/places": "GET",
   "/api/app/place": "POST",
+  "/api/app/place/remove": "POST",
+  "/api/app/settings": "POST",
+  "/api/app/share": "POST",
   "/api/app/demo": "GET",
 };
 
@@ -473,9 +689,20 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
     const auth = await authorise(req, env);
     if ("refused" in auth) return auth.refused;
     lang = auth.user.lang;
-    if (path === "/api/app/dashboard") return await onDashboard(env, auth.user, url.searchParams.get("fresh") === "1");
-    if (path === "/api/app/places") return await onPlaces(env, auth.user, url.searchParams.get("q") ?? "");
-    return await onSavePlace(env, auth.user, req);
+    switch (path) {
+      case "/api/app/dashboard":
+        return await onDashboard(env, auth.user, url.searchParams.get("fresh") === "1");
+      case "/api/app/places":
+        return await onPlaces(env, auth.user, url.searchParams.get("q") ?? "");
+      case "/api/app/place":
+        return await onSavePlace(env, auth.user, req);
+      case "/api/app/place/remove":
+        return await onRemovePlace(env, auth.user, req);
+      case "/api/app/settings":
+        return await onSettings(env, auth.user, req);
+      default:
+        return await onShare(env, auth.user, req);
+    }
   } catch (e) {
     if (e instanceof WeatherError) return apiError(503, "weather_unavailable", t(lang, "app_err_wx"), { "retry-after": "30" });
     console.log(JSON.stringify({ event: "api_error", path, error: String(e).slice(0, 200) })); // never the request headers: they carry initData

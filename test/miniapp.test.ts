@@ -136,7 +136,7 @@ describe("buildDashboard: the same numbers and words as the chat report", () => 
 
   it("hourly: 24 hours from now (FR-5)", () => {
     expect(d.hourly).toHaveLength(24);
-    expect(d.hourly[0]).toEqual({ label: "Now", icon: "partly-day", cond: "Partly cloudy", temp: "29°", prob: 10 });
+    expect(d.hourly[0]).toEqual({ label: "Now", icon: "partly-day", cond: "Partly cloudy", temp: "29°", t: 29, prob: 10 });
     expect(d.hourly[1].label).toBe("9 AM");
     expect(d.hourly[12]).toMatchObject({ label: "8 PM", icon: "partly-night" }); // night icon after dark
     expect(hourlyMessage(report, P())).toContain("29°"); // same first value as the chat's hourly view

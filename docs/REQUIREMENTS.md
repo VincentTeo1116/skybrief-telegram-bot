@@ -22,6 +22,18 @@ Status values: Verified, Partly, Not verified, Not built. See `docs/VERIFICATION
 | FR-10 | Personal preferences are honoured | Must | Language (en / ms / zh), °C/°F, wind unit and 12h/24h clock come from the person's bot settings. |
 | FR-11 | Preview without Telegram | Should | `/app/?demo=sunny|cloudy|rainy|windy|storm|night` shows clearly labelled demo data so the design and each animation can be reviewed in a normal browser. |
 
+### Added in v2.4 (owner's request, 20 Nov 2026: "do 1-4 with a proper fallback, 5 and 6 as well, and share as a picture card")
+
+| ID | Requirement | Priority | Acceptance criteria |
+|---|---|---|---|
+| FR-12 | Several saved places | Should | Up to 5 places are remembered automatically (newest first). With 2 or more, they appear as chips on the sky; one tap switches. A place can be removed from the location sheet; the active one cannot. Switching is saved for the bot too. |
+| FR-13 | Settings inside the app | Must | A sheet changes language, °C/°F, wind unit, clock, morning and evening report (on/off and time), rain alerts, AQI alert level and official warnings. Each change is saved at once with the same rules as the chat, the dashboard redraws, and the chat's keyboard follows a language change. Only known settings with valid values are accepted. |
+| FR-14 | Official Malaysian API (IPU) | Must | When the Department of Environment has a reading under 3 hours old from a station within 40 km, the air card shows it with band, station, time and source, next to the US AQI. For places outside Malaysia, or when there is no such reading, the block is absent. |
+| FR-15 | Tap a day for details | Must | Each forecast row opens to show morning / afternoon / evening, rain chance and total, wind, UV, sunrise and sunset, the air-quality peak, the best time outside and tips. One row open at a time. Lines without data are left out. |
+| FR-16 | Hourly chart | Should | A temperature line across the next 24 hours, aligned with the hour columns, and a rain-chance meter per hour. One measure per scale. Absent when temperatures are unknown. |
+| FR-17 | Use my current location | Must | A button in the location sheet takes the position from Telegram's location service, or else from the browser, and saves the place named by the server's own lookup. |
+| FR-18 | Share a picture card | Must | A share button shows a 1080 × 1350 picture of today's weather (sky scene, temperature, condition, AQI / IPU, rain line, 3-day outlook). Sending puts it in the person's own chat with the bot and, on Telegram 8.0+, opens Telegram's "share to a chat" picker. |
+
 ## Non-functional
 
 | ID | Requirement | Priority | Acceptance criteria |
@@ -33,7 +45,7 @@ Status values: Verified, Partly, Not verified, Not built. See `docs/VERIFICATION
 | NFR-5 | Light and dark themes | Must | Follows Telegram's theme (falls back to the system setting). |
 | NFR-6 | Security baseline | Must | Strict CSP and security headers; no secrets in the client; all input validated on the server; JSON errors leak nothing. |
 | NFR-7 | Error pages | Must | Unknown page → custom 404 page with HTTP 404; unknown API path → JSON 404. |
-| NFR-8 | Small and cheap | Must | No framework, no build step. Budget: app shell (HTML + CSS + JS) under 100 KB uncompressed. A dashboard load costs at most 4 outgoing requests, so it fits Cloudflare's free plan. |
+| NFR-8 | Small and cheap | Must | No framework, no build step. Budget: app shell (HTML + CSS + JS) under 130 KB uncompressed (raised from 100 KB in v2.4: settings, the share card and the chart added about 40 KB; it is 116 KB, about 30 KB compressed). A dashboard load costs at most 5 outgoing requests (the fifth is the optional IPU feed), so it fits Cloudflare's free plan. |
 | NFR-9 | The bot keeps working exactly as before | Must | All existing unit and integration tests still pass. |
 
 ## Sample data used by the tests

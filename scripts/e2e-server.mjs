@@ -51,11 +51,32 @@ if (mig.status !== 0) {
   process.exit(1);
 }
 
-// Mock Telegram: accepts everything.
+// Mock Telegram: accepts everything and remembers what it was asked, so the tests can check it.
+//   GET /__calls   -> [{ method, type, bytes, text }]        GET /__set?photoDown=1&prepareDown=1
+const tgCalls = [];
+const tgState = { photoDown: false, prepareDown: false };
 const telegram = http.createServer((req, res) => {
-  req.resume();
+  const chunks = [];
+  req.on("data", (d) => chunks.push(d));
   req.on("end", () => {
+    const url = new URL(req.url, "http://x");
     res.setHeader("content-type", "application/json");
+    if (url.pathname === "/__calls") return res.end(JSON.stringify(tgCalls));
+    if (url.pathname === "/__set") {
+      for (const [k, v] of url.searchParams) tgState[k] = v === "1";
+      return res.end(JSON.stringify(tgState));
+    }
+    const method = url.pathname.split("/").pop();
+    const raw = Buffer.concat(chunks);
+    const type = req.headers["content-type"] ?? "";
+    tgCalls.push({ method, type: type.split(";")[0], bytes: raw.length, text: type.includes("json") ? raw.toString("utf8").slice(0, 2000) : raw.toString("latin1").slice(0, 600) });
+    if (tgCalls.length > 300) tgCalls.shift();
+    const fail = (description) => {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ ok: false, error_code: 400, description }));
+    };
+    if (method === "sendPhoto") return tgState.photoDown ? fail("Bad Request: photo") : res.end(JSON.stringify({ ok: true, result: { message_id: 2, photo: [{ file_id: "small" }, { file_id: "FILE_LARGE" }] } }));
+    if (method === "savePreparedInlineMessage") return tgState.prepareDown ? fail("Bad Request: method not found") : res.end(JSON.stringify({ ok: true, result: { id: "PREPARED_1" } }));
     res.end(JSON.stringify({ ok: true, result: { message_id: 1 } }));
   });
 });
@@ -78,6 +99,7 @@ const vars = {
   WAQI_TOKEN: "waqitest",
   APP_URL: "https://skybrief.test",
   APP_REFRESH_MS: "0", // let the tests force a refresh whenever they change the mock weather
+  APP_SHARE_MS: "1500", // short, but still long enough to test that two quick shares are refused
   TELEGRAM_API_BASE: `http://127.0.0.1:${TG_PORT}`,
   OPEN_METEO_FORECAST_URL: `${WX}/forecast`,
   OPEN_METEO_AIR_URL: `${WX}/air`,
@@ -86,6 +108,7 @@ const vars = {
   WAQI_URL: `${WX}/waqi`,
   METNO_URL: `${WX}/metno`,
   WARNINGS_URL: `${WX}/warnings`,
+  IPU_URL: `${WX}/ipu`,
 };
 worker = spawn(
   "npx",

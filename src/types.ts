@@ -27,12 +27,16 @@ export interface Env {
   WAQI_URL?: string;
   METNO_URL?: string;
   WARNINGS_URL?: string;
+  /** Mock for the Department of Environment's API (IPU) feed, or "off" to never ask for it. */
+  IPU_URL?: string;
   /** "1" = run the alert pass on every cron tick instead of every 15 minutes. */
   ALERTS_EVERY_MINUTE?: string;
   /** "1" = run the health probe on every cron tick instead of every 5 minutes. */
   HEALTH_EVERY_MINUTE?: string;
   /** Milliseconds between forced refreshes from the mini app (default 60000). The browser tests set "0". */
   APP_REFRESH_MS?: string;
+  /** Milliseconds between shared picture cards per person (default 10000). The browser tests shorten it. */
+  APP_SHARE_MS?: string;
 }
 
 export type Lang = "en" | "ms" | "zh";
@@ -92,6 +96,8 @@ export interface User {
   district: string;
   warningsOn: boolean;
   warnSeen: string[];
+  /** Saved places for the mini app, as JSON (see location.ts). The active place stays in the columns above. */
+  placesJson: string;
 }
 
 /** Everything that controls how a report is rendered for one person. */
